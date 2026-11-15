@@ -33,11 +33,12 @@ echo "Downloading Router Support agent from GitHub..." >&2
 mkdir -p "$INSTALL_DIR/files"
 download "$RAW_ROOT/openwrt-agent/install.sh" "$INSTALL_DIR/install.sh"
 download "$RAW_ROOT/openwrt-agent/update.sh" "$INSTALL_DIR/update.sh"
+download "$RAW_ROOT/openwrt-agent/reconfigure.sh" "$INSTALL_DIR/reconfigure.sh"
 download "$RAW_ROOT/openwrt-agent/uninstall.sh" "$INSTALL_DIR/uninstall.sh"
 download "$RAW_ROOT/openwrt-agent/files/router-support" "$INSTALL_DIR/files/router-support"
 download "$RAW_ROOT/openwrt-agent/files/router-support.init" "$INSTALL_DIR/files/router-support.init"
 chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/update.sh" \
-    "$INSTALL_DIR/uninstall.sh" \
+    "$INSTALL_DIR/reconfigure.sh" "$INSTALL_DIR/uninstall.sh" \
     "$INSTALL_DIR/files/router-support" "$INSTALL_DIR/files/router-support.init"
 
 if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
@@ -45,8 +46,9 @@ if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
     echo >&2
     echo "Existing Router Support agent detected." >&2
     echo "  1) Update (recommended)" >&2
-    echo "  2) Remove (preserve device identity)" >&2
-    echo "  3) Cancel" >&2
+    echo "  2) Configure a new server connection" >&2
+    echo "  3) Remove (preserve device identity)" >&2
+    echo "  4) Cancel" >&2
     printf 'Choose an action [1]: ' >&2
     action="${ROUTER_SUPPORT_ACTION:-}"
     if [ -z "$action" ]; then
@@ -61,10 +63,13 @@ if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
         1|update)
             "$INSTALL_DIR/update.sh"
             ;;
-        2|remove|uninstall)
+        2|configure|reconfigure|connect)
+            "$INSTALL_DIR/reconfigure.sh"
+            ;;
+        3|remove|uninstall)
             "$INSTALL_DIR/uninstall.sh"
             ;;
-        3|cancel|quit)
+        4|cancel|quit)
             echo "No changes were made."
             ;;
         *)
