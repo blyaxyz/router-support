@@ -91,6 +91,7 @@ detect_public_ipv4() {
         candidate="${BASH_REMATCH[1]}"
         valid_public_ipv4 "$candidate" && printf '%s' "$candidate"
     fi
+    return 0
 }
 
 detect_ssh_port() {
@@ -130,6 +131,7 @@ detect_telemt_config() {
     for candidate in /etc/telemt/telemt.toml /etc/telemt/config.toml; do
         [ -f "$candidate" ] && { printf '%s' "$candidate"; return; }
     done
+    return 0
 }
 
 verify_local_acme_webroot() {
@@ -148,6 +150,164 @@ verify_local_acme_webroot() {
         echo "Unexpected response from the local ACME challenge path." >&2
         exit 1
     fi
+}
+
+declare -A ROLLBACK_PRESENT=()
+ROLLBACK_ACTIVE=0
+INSTALL_COMMITTED=0
+ROLLBACK_DIR=""
+TRACKED_FILES=()
+
+unit_is_active() {
+    systemctl is-active --quiet "$1" 2>/dev/null
+}
+
+unit_is_enabled() {
+    systemctl is-enabled --quiet "$1" 2>/dev/null
+}
+
+backup_tracked_file() {
+    local path="$1" destination
+    TRACKED_FILES+=("$path")
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        ROLLBACK_PRESENT["$path"]=1
+        destination="$ROLLBACK_DIR/files$path"
+        mkdir -p "$(dirname "$destination")"
+        cp -a "$path" "$destination"
+    else
+        ROLLBACK_PRESENT["$path"]=0
+    fi
+}
+
+restore_tracked_file() {
+    local path="$1" source
+    source="$ROLLBACK_DIR/files$path"
+    if [ "${ROLLBACK_PRESENT[$path]}" -eq 1 ]; then
+        mkdir -p "$(dirname "$path")"
+        rm -f "$path"
+        cp -a "$source" "$path"
+    else
+        rm -f "$path"
+    fi
+}
+
+restore_unit_state() {
+    local unit="$1" was_enabled="$2" was_active="$3"
+    if [ "$was_enabled" -eq 1 ]; then
+        systemctl enable "$unit" >/dev/null 2>&1 || true
+    else
+        systemctl disable "$unit" >/dev/null 2>&1 || true
+    fi
+    if [ "$was_active" -eq 1 ]; then
+        systemctl start "$unit" >/dev/null 2>&1 || true
+    else
+        systemctl stop "$unit" >/dev/null 2>&1 || true
+    fi
+}
+
+capture_initial_state() {
+    APACHE_WAS_ACTIVE=0
+    ROUTER_SUPPORT_WAS_ACTIVE=0
+    CERTBOT_TIMER_WAS_ACTIVE=0
+    CERTBOT_TIMER_WAS_ENABLED=0
+    SUPPORT_CERTBOT_TIMER_WAS_ACTIVE=0
+    SUPPORT_CERTBOT_TIMER_WAS_ENABLED=0
+    unit_is_active apache2.service && APACHE_WAS_ACTIVE=1
+    unit_is_active router-support.service && ROUTER_SUPPORT_WAS_ACTIVE=1
+    unit_is_active certbot.timer && CERTBOT_TIMER_WAS_ACTIVE=1
+    unit_is_enabled certbot.timer && CERTBOT_TIMER_WAS_ENABLED=1
+    unit_is_active router-support-certbot.timer && SUPPORT_CERTBOT_TIMER_WAS_ACTIVE=1
+    unit_is_enabled router-support-certbot.timer && SUPPORT_CERTBOT_TIMER_WAS_ENABLED=1
+    return 0
+}
+
+begin_install_transaction() {
+    local path module
+    ROLLBACK_DIR="$(mktemp -d /tmp/router-support-rollback.XXXXXX)"
+
+    if [ -d /etc/apache2 ]; then
+        cp -a /etc/apache2 "$ROLLBACK_DIR/apache2"
+        APACHE_CONFIG_EXISTED=1
+    else
+        APACHE_CONFIG_EXISTED=0
+    fi
+
+    for path in \
+        /etc/apache2/sites-available/router-support.conf \
+        /etc/apache2/sites-available/router-support-ip-ssl.conf \
+        /etc/apache2/sites-available/router-support-le-ssl.conf \
+        /etc/apache2/sites-enabled/router-support.conf \
+        /etc/apache2/sites-enabled/router-support-ip-ssl.conf \
+        /etc/apache2/sites-enabled/router-support-le-ssl.conf \
+        /etc/ssh/sshd_config.d/router-support.conf \
+        /etc/systemd/system/router-support.service \
+        /etc/systemd/system/router-support-certbot.service \
+        /etc/systemd/system/router-support-certbot.timer \
+        /etc/letsencrypt/renewal-hooks/deploy/router-support-apache \
+        /etc/router-support/backend.env; do
+        backup_tracked_file "$path"
+    done
+    for module in proxy proxy_http proxy_wstunnel rewrite ssl; do
+        backup_tracked_file "/etc/apache2/mods-enabled/$module.load"
+        backup_tracked_file "/etc/apache2/mods-enabled/$module.conf"
+    done
+    if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+        backup_tracked_file "$TELEMT_CONFIG"
+        backup_tracked_file "$TELEMT_CONFIG.router-support-backup"
+    fi
+    ROLLBACK_ACTIVE=1
+}
+
+rollback_install() {
+    local path
+    set +e
+    echo >&2
+    echo "Installation did not complete; restoring the previous system state..." >&2
+    for path in "${TRACKED_FILES[@]}"; do
+        restore_tracked_file "$path"
+    done
+    if [ "$APACHE_CONFIG_EXISTED" -eq 1 ] && [ -d "$ROLLBACK_DIR/apache2" ]; then
+        cp -a "$ROLLBACK_DIR/apache2/." /etc/apache2/
+    fi
+    systemctl daemon-reload
+    restore_unit_state certbot.timer \
+        "$CERTBOT_TIMER_WAS_ENABLED" "$CERTBOT_TIMER_WAS_ACTIVE"
+    restore_unit_state router-support-certbot.timer \
+        "$SUPPORT_CERTBOT_TIMER_WAS_ENABLED" "$SUPPORT_CERTBOT_TIMER_WAS_ACTIVE"
+    if [ "$ROUTER_SUPPORT_WAS_ACTIVE" -eq 1 ]; then
+        systemctl restart router-support.service >/dev/null 2>&1 || true
+    else
+        systemctl stop router-support.service >/dev/null 2>&1 || true
+    fi
+    if sshd -t >/dev/null 2>&1; then
+        systemctl reload ssh >/dev/null 2>&1 || true
+    fi
+    if [ "$APACHE_WAS_ACTIVE" -eq 1 ]; then
+        systemctl restart apache2.service >/dev/null 2>&1 || true
+    else
+        systemctl stop apache2.service >/dev/null 2>&1 || true
+    fi
+    if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+        systemctl restart telemt.service >/dev/null 2>&1 || true
+    fi
+    echo "Rollback finished. Previously running services were restored where possible." >&2
+}
+
+finish_install() {
+    local status="$?"
+    trap - EXIT
+    trap '' INT TERM
+    if [ "$ROLLBACK_ACTIVE" -eq 1 ] && \
+        { [ "$INSTALL_COMMITTED" -ne 1 ] || [ "$status" -ne 0 ]; }; then
+        rollback_install
+    fi
+    [ -z "$ROLLBACK_DIR" ] || rm -rf "$ROLLBACK_DIR"
+    exit "$status"
+}
+
+interrupt_install() {
+    echo "Installation interrupted by user" >&2
+    exit 130
 }
 
 interactive_setup() {
@@ -266,6 +426,7 @@ case "$INTERNAL_HTTPS_PORT" in ''|*[!0-9]*) usage ;; esac
 case "$IP_CERT_ADDRESS" in ''|*[!0-9.]*) [ -z "$IP_CERT_ADDRESS" ] || usage ;; esac
 [ "$TELEMT_INTEGRATION" -eq 0 ] || {
     [ -n "$TELEMT_CONFIG" ] || TELEMT_CONFIG="$(detect_telemt_config)"
+    case "$TELEMT_CONFIG" in /*) ;; *) echo "Telemt config path must be absolute" >&2; exit 2 ;; esac
     [ -n "$TELEMT_CONFIG" ] && [ -f "$TELEMT_CONFIG" ] || {
         echo "Telemt configuration was not found; use --telemt-config" >&2
         exit 2
@@ -297,6 +458,8 @@ else
 fi
 
 export DEBIAN_FRONTEND=noninteractive
+capture_initial_state
+trap interrupt_install INT TERM
 apt-get update
 apt-get install -y apache2 ca-certificates certbot curl iproute2 openssh-server \
     python3 python3-venv python3-certbot-apache
@@ -307,6 +470,10 @@ if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
 else
     ensure_apache_port_available 443
 fi
+
+trap finish_install EXIT
+begin_install_transaction
+trap interrupt_install INT TERM
 
 if ! id router-tunnel >/dev/null 2>&1; then
     useradd --system --create-home --home-dir /var/lib/router-tunnel \
@@ -544,4 +711,5 @@ echo
 echo "The token is also stored locally in: $ENV_FILE"
 echo "Only root can read this file."
 echo "After enrolling routers run: $INSTALL_ROOT/deploy/sync-service-domains.sh"
+INSTALL_COMMITTED=1
 

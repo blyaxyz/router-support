@@ -30,6 +30,7 @@ fi
     echo "Telemt configuration was not found; set ROUTER_SUPPORT_TELEMT_CONFIG" >&2
     exit 1
 }
+case "$CONFIG_FILE" in /*) ;; *) echo "Telemt config path must be absolute" >&2; exit 1 ;; esac
 [ -f "$ENV_FILE" ] || { echo "Missing $ENV_FILE" >&2; exit 1; }
 systemctl is-active --quiet "$TELEMT_SERVICE" || {
     echo "$TELEMT_SERVICE is not active" >&2
@@ -69,6 +70,7 @@ ROLLBACK_NEEDED=1
 finish() {
     status="$?"
     trap - EXIT
+    trap '' INT TERM
     if [ "$status" -ne 0 ] && [ "$ROLLBACK_NEEDED" -eq 1 ]; then
         echo "Restoring the previous Telemt configuration" >&2
         cp -a "$ROLLBACK_FILE" "$CONFIG_FILE"
@@ -78,6 +80,8 @@ finish() {
     exit "$status"
 }
 trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 python3 "$SCRIPT_DIR/update_telemt_config.py" \
     "$CONFIG_FILE" "$INTERNAL_PORT" "${DOMAINS[@]}"
