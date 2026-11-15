@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Router Support Panel</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">Центр управления</p>
+      <h1>Router Support</h1>
+    </div>
+    <button id="credentials" class="secondary">Токен доступа</button>
+  </header>
+  <main>
+    <section class="summary" aria-label="Сводка">
+      <article><span id="total">—</span><small>Всего устройств</small></article>
+      <article><span id="online">—</span><small>Онлайн</small></article>
+      <article><span id="offline">—</span><small>Офлайн</small></article>
+    </section>
+    <section class="toolbar">
+      <input id="search" type="search" placeholder="UUID, имя или модель">
+      <button id="refresh">Обновить</button>
+    </section>
+    <p id="message" class="message" role="status"></p>
+    <section id="routers" class="grid" aria-live="polite"></section>
+  </main>
+  <template id="router-card">
+    <article class="router-card">
+      <div class="card-heading">
+        <div><div class="title-line"><h2></h2><button class="rename" title="Изменить hostname">✎</button></div><p class="model"></p></div>
+        <span class="status"></span>
+      </div>
+      <dl>
+        <div><dt>UUID</dt><dd class="uuid"></dd></div>
+        <div><dt>OpenWrt</dt><dd class="firmware"></dd></div>
+        <div><dt>MAC</dt><dd class="mac"></dd></div>
+        <div><dt>Reverse SSH</dt><dd class="port"></dd></div>
+        <div><dt>Heartbeat</dt><dd class="seen"></dd></div>
+      </dl>
+      <div class="support-links"></div>
+      <button class="support-button">Начать поддержку</button>
+    </article>
+  </template>
+  <dialog id="terminal-dialog">
+    <div class="terminal-heading">
+      <strong>SSH · <span id="terminal-name"></span></strong>
+      <button id="terminal-close" class="secondary">Закрыть</button>
+    </div>
+    <pre id="terminal-output" tabindex="0" aria-label="SSH терминал"></pre>
+    <p class="terminal-help">Кликните в терминал и печатайте. Поддерживаются Enter, Tab, стрелки и Ctrl+C.</p>
+  </dialog>
+  <script src="/app.js" defer></script>
+</body>
+</html>

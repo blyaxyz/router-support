@@ -1,0 +1,54 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #0b1015;
+  color: #edf5f2;
+  --panel: #121a21;
+  --line: #24323a;
+  --accent: #62e4b5;
+  --muted: #8ea39e;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% 0, #18352e 0, transparent 35%), #0b1015; }
+header, main { width: min(1180px, calc(100% - 32px)); margin-inline: auto; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 52px 0 32px; }
+h1, h2, p { margin: 0; }
+h1 { font-size: clamp(2rem, 6vw, 4.4rem); letter-spacing: -.06em; }
+.eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; font-weight: 700; margin-bottom: 8px; }
+button, input { border-radius: 10px; border: 1px solid var(--line); font: inherit; }
+button { padding: 11px 17px; background: var(--accent); color: #06251c; font-weight: 750; cursor: pointer; }
+button.secondary { color: #d8e9e3; background: #152129; }
+button:disabled { cursor: not-allowed; background: #27352f; color: #82938d; }
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+.summary article, .router-card { background: color-mix(in srgb, var(--panel) 93%, transparent); border: 1px solid var(--line); box-shadow: 0 20px 50px #0005; }
+.summary article { padding: 20px; border-radius: 14px; display: flex; flex-direction: column; }
+.summary span { font-size: 2rem; font-weight: 800; }
+.summary small { color: var(--muted); }
+.toolbar { display: flex; gap: 10px; margin-bottom: 18px; }
+input { min-width: 0; flex: 1; padding: 13px 15px; background: #0f171d; color: inherit; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(315px, 1fr)); gap: 14px; padding-bottom: 60px; }
+.router-card { border-radius: 16px; padding: 21px; }
+.card-heading { display: flex; justify-content: space-between; gap: 14px; }
+.card-heading h2 { font-size: 1.1rem; }
+.title-line { display: flex; align-items: center; gap: 7px; }
+.rename { padding: 2px 7px; background: transparent; color: var(--muted); border: 0; }
+.model, .message { color: var(--muted); }
+.status { height: fit-content; padding: 5px 9px; border-radius: 99px; font-size: .75rem; font-weight: 800; }
+.status.online { background: #123c30; color: #77f2c2; }
+.status.offline { background: #3a2727; color: #ef9999; }
+dl { margin: 23px 0; display: grid; gap: 13px; }
+dl div { display: grid; grid-template-columns: 105px 1fr; gap: 8px; }
+dt { color: var(--muted); font-size: .82rem; }
+dd { margin: 0; overflow-wrap: anywhere; font-size: .9rem; }
+.message { margin: 12px 0; }
+.support-links { display: flex; gap: 8px; margin-bottom: 12px; }
+.support-links:empty { display: none; }
+.support-links a { flex: 1; padding: 9px 6px; border: 1px solid #315248; border-radius: 8px; color: var(--accent); text-align: center; text-decoration: none; font-size: .82rem; }
+.support-links .terminal-link { flex: 1; padding: 9px 6px; background: transparent; border-color: #315248; color: var(--accent); font-size: .82rem; }
+.router-card > button { width: 100%; }
+#terminal-dialog { width: min(900px, calc(100% - 24px)); height: min(650px, calc(100% - 24px)); padding: 0; border: 1px solid #315248; border-radius: 14px; background: #080d11; color: #d7fbe9; }
+#terminal-dialog::backdrop { background: #000b; backdrop-filter: blur(4px); }
+.terminal-heading { height: 58px; display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+#terminal-output { height: calc(100% - 100px); margin: 0; padding: 18px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; background: #05080a; color: #aaf3cf; font: 14px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.terminal-help { padding: 9px 14px; color: var(--muted); font-size: .75rem; }
+@media (max-width: 620px) { header { padding-top: 30px; } .summary { grid-template-columns: 1fr; } .toolbar { flex-direction: column; } }

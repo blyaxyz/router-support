@@ -1,0 +1,113 @@
+#!/bin/sh
+set -eu
+
+usage() {
+    echo "usage: $0 [server-url] [bootstrap-token]" >&2
+    echo "with no arguments the installer starts an interactive setup" >&2
+    echo "or set ROUTER_SUPPORT_BOOTSTRAP_TOKEN in the environment" >&2
+    exit 2
+}
+
+prompt_secret() {
+    prompt="$1"
+    if [ -t 0 ] && command -v stty >/dev/null 2>&1; then
+        terminal_state="$(stty -g)"
+        printf '%s' "$prompt" >&2
+        trap 'stty "$terminal_state"' 0 1 2 15
+        stty -echo
+        IFS= read -r secret_value
+        stty "$terminal_state"
+        trap - 0 1 2 15
+        printf '\n' >&2
+    else
+        printf '%s' "$prompt" >&2
+        IFS= read -r secret_value
+    fi
+    printf '%s' "$secret_value"
+}
+
+[ "$#" -le 2 ] || usage
+if [ "$#" -eq 0 ]; then
+    printf 'Router Support HTTPS address (domain or IP): ' >&2
+    IFS= read -r server_input
+    case "$server_input" in
+        https://*) SERVER_URL="${server_input%/}" ;;
+        http://*) echo "Only HTTPS is allowed" >&2; exit 2 ;;
+        *) SERVER_URL="https://${server_input%/}" ;;
+    esac
+else
+    SERVER_URL="${1%/}"
+fi
+
+BOOTSTRAP_TOKEN="${2:-${ROUTER_SUPPORT_BOOTSTRAP_TOKEN:-}}"
+if [ -z "$BOOTSTRAP_TOKEN" ]; then
+    BOOTSTRAP_TOKEN="$(prompt_secret 'Bootstrap token: ')"
+fi
+[ -n "$BOOTSTRAP_TOKEN" ] || usage
+SOURCE_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+CONFIG_DIR="/etc/router-support"
+
+case "$SERVER_URL" in
+    https://*) ;;
+    *) echo "server URL must use HTTPS" >&2; exit 2 ;;
+esac
+case "$SERVER_URL" in
+    *[!A-Za-z0-9:/._~=-]*)
+        echo "server URL contains unsupported characters" >&2
+        exit 2
+        ;;
+esac
+case "$BOOTSTRAP_TOKEN" in
+    ''|*[!A-Za-z0-9._~-]*)
+        echo "bootstrap token contains unsupported characters" >&2
+        exit 2
+        ;;
+esac
+
+for command_name in dropbearkey jsonfilter uclient-fetch; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+        echo "missing required command: $command_name" >&2
+        exit 1
+    }
+done
+
+umask 077
+mkdir -p "$CONFIG_DIR"
+if [ ! -s "$CONFIG_DIR/uuid" ]; then
+    if [ -r /proc/sys/kernel/random/uuid ]; then
+        tr -d '\n' </proc/sys/kernel/random/uuid >"$CONFIG_DIR/uuid"
+    else
+        random_hex="$(hexdump -n 16 -e '16/1 "%02x"' /dev/urandom)"
+        printf '%s-%s-%s-%s-%s' \
+            "${random_hex%????????????????????????}" \
+            "$(printf '%s' "$random_hex" | cut -c9-12)" \
+            "$(printf '%s' "$random_hex" | cut -c13-16)" \
+            "$(printf '%s' "$random_hex" | cut -c17-20)" \
+            "$(printf '%s' "$random_hex" | cut -c21-32)" >"$CONFIG_DIR/uuid"
+    fi
+fi
+
+if [ ! -s "$CONFIG_DIR/id_router_support" ]; then
+    if ! dropbearkey -t ed25519 -f "$CONFIG_DIR/id_router_support" >/dev/null 2>&1; then
+        dropbearkey -t rsa -s 2048 -f "$CONFIG_DIR/id_router_support" >/dev/null
+    fi
+fi
+
+cat >"$CONFIG_DIR/config" <<EOF
+SERVER_URL='$SERVER_URL'
+BOOTSTRAP_TOKEN='$BOOTSTRAP_TOKEN'
+DEVICE_UUID='$(cat "$CONFIG_DIR/uuid")'
+EOF
+chmod 600 "$CONFIG_DIR/config" "$CONFIG_DIR/id_router_support" "$CONFIG_DIR/uuid"
+
+cp "$SOURCE_DIR/files/router-support" /usr/sbin/router-support
+cp "$SOURCE_DIR/files/router-support.init" /etc/init.d/router-support
+cp "$SOURCE_DIR/uninstall.sh" /usr/sbin/router-support-uninstall
+chmod 0755 /usr/sbin/router-support /usr/sbin/router-support-uninstall \
+    /etc/init.d/router-support
+
+/usr/sbin/router-support register
+/etc/init.d/router-support enable
+/etc/init.d/router-support restart
+echo "router-support installed, registered and started"
+

@@ -1,0 +1,277 @@
+#!/bin/sh
+set -eu
+
+CONFIG_DIR="${ROUTER_SUPPORT_CONFIG_DIR:-/etc/router-support}"
+CONFIG_FILE="$CONFIG_DIR/config"
+STATE_FILE="$CONFIG_DIR/state"
+KEY_FILE="$CONFIG_DIR/id_router_support"
+# procd starts root services with HOME=/ on OpenWrt; Dropbear reads this path.
+KNOWN_HOSTS="/.ssh/known_hosts"
+TUNNEL_PID=""
+
+log() {
+    logger -t router-support "$*"
+    printf '%s\n' "router-support: $*" >&2
+}
+
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/[[:cntrl:]]/ /g'
+}
+
+http_post() {
+    url="$1"
+    bearer="$2"
+    body="$3"
+    if command -v curl >/dev/null 2>&1; then
+        curl --fail --silent --show-error \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $bearer" \
+            --data "$body" "$url"
+    elif command -v uclient-fetch >/dev/null 2>&1; then
+        uclient-fetch -q -O - \
+            --header="Content-Type: application/json" \
+            --header="Authorization: Bearer $bearer" \
+            --post-data="$body" "$url"
+    else
+        log "uclient-fetch or curl is required"
+        return 127
+    fi
+}
+
+json_get() {
+    jsonfilter -s "$1" -e "@$2"
+}
+
+load_config() {
+    if [ ! -r "$CONFIG_FILE" ]; then
+        log "missing $CONFIG_FILE"
+        return 1
+    fi
+    # The file is root-only and contains simple KEY='value' assignments.
+    # shellcheck source=/dev/null
+    . "$CONFIG_FILE"
+    if [ -r "$STATE_FILE" ]; then
+        # shellcheck source=/dev/null
+        . "$STATE_FILE"
+    fi
+}
+
+device_payload() {
+    hostname_value="$(uci -q get system.@system[0].hostname || hostname || echo openwrt)"
+    model_value="$(ubus call system board 2>/dev/null | jsonfilter -e '@.model' || true)"
+    # shellcheck source=/dev/null
+    firmware_value="$(. /etc/openwrt_release 2>/dev/null; printf '%s' "${DISTRIB_RELEASE:-unknown}")"
+    ram_value="$(awk '/^MemTotal:/ { print int($2 / 1024); exit }' /proc/meminfo)"
+    public_key="$(dropbearkey -y -f "$KEY_FILE" 2>/dev/null | awk '/^ssh-(ed25519|rsa) / { print; exit }')"
+    mac_value="$(device_mac_address)"
+    printf '{"uuid":"%s","hostname":"%s","model":"%s","firmware":"%s","ram_mb":%s,"mac_address":"%s","public_key":"%s"}' \
+        "$(json_escape "$DEVICE_UUID")" \
+        "$(json_escape "$hostname_value")" \
+        "$(json_escape "$model_value")" \
+        "$(json_escape "$firmware_value")" \
+        "${ram_value:-1}" \
+        "$(json_escape "$mac_value")" \
+        "$(json_escape "$public_key")"
+}
+
+device_mac_address() {
+    for interface_name in br-lan lan eth0; do
+        address_file="/sys/class/net/$interface_name/address"
+        if [ -r "$address_file" ]; then
+            mac_value="$(tr 'a-f' 'A-F' <"$address_file")"
+            case "$mac_value" in
+                00:00:00:00:00:00|"") ;;
+                *) printf '%s' "$mac_value"; return 0 ;;
+            esac
+        fi
+    done
+    for address_file in /sys/class/net/*/address; do
+        [ -r "$address_file" ] || continue
+        case "$address_file" in */lo/address) continue ;; esac
+        mac_value="$(tr 'a-f' 'A-F' <"$address_file")"
+        case "$mac_value" in
+            00:00:00:00:00:00|"") ;;
+            *) printf '%s' "$mac_value"; return 0 ;;
+        esac
+    done
+    return 0
+}
+
+write_state() {
+    umask 077
+    temporary="$STATE_FILE.tmp"
+    {
+        printf "DEVICE_TOKEN='%s'\n" "$DEVICE_TOKEN"
+        printf "SSH_HOST='%s'\n" "$SSH_HOST"
+        printf "SSH_USER='%s'\n" "$SSH_USER"
+        printf "SSH_SERVER_PORT='%s'\n" "$SSH_SERVER_PORT"
+        printf "REVERSE_PORT='%s'\n" "$REVERSE_PORT"
+        printf "HEARTBEAT_INTERVAL='%s'\n" "$HEARTBEAT_INTERVAL"
+    } >"$temporary"
+    mv "$temporary" "$STATE_FILE"
+}
+
+forget_bootstrap_token() {
+    temporary="$CONFIG_FILE.tmp"
+    grep -v '^BOOTSTRAP_TOKEN=' "$CONFIG_FILE" >"$temporary"
+    chmod 600 "$temporary"
+    mv "$temporary" "$CONFIG_FILE"
+    BOOTSTRAP_TOKEN=""
+}
+
+register_device() {
+    [ -n "${BOOTSTRAP_TOKEN:-}" ] || {
+        log "registration requires BOOTSTRAP_TOKEN"
+        return 1
+    }
+    response="$(http_post "$SERVER_URL/api/routers/register" "$BOOTSTRAP_TOKEN" "$(device_payload)")"
+    DEVICE_TOKEN="$(json_get "$response" '.device_token')"
+    SSH_HOST="$(json_get "$response" '.ssh_host')"
+    SSH_USER="$(json_get "$response" '.ssh_user')"
+    SSH_SERVER_PORT="$(json_get "$response" '.ssh_server_port')"
+    REVERSE_PORT="$(json_get "$response" '.reverse_port')"
+    HEARTBEAT_INTERVAL="$(json_get "$response" '.heartbeat_interval')"
+    host_key="$(json_get "$response" '.ssh_host_key')"
+    [ -n "$DEVICE_TOKEN" ] && [ -n "$host_key" ] || {
+        log "registration response is incomplete"
+        return 1
+    }
+    case "$SSH_HOST$SSH_USER" in
+        *[!A-Za-z0-9._:@-]*) log "unsafe SSH endpoint in response"; return 1 ;;
+    esac
+    case "$SSH_SERVER_PORT$REVERSE_PORT$HEARTBEAT_INTERVAL" in
+        ''|*[!0-9]*) log "invalid numeric value in response"; return 1 ;;
+    esac
+    mkdir -p "$(dirname "$KNOWN_HOSTS")"
+    chmod 700 "$(dirname "$KNOWN_HOSTS")"
+    if [ "$SSH_SERVER_PORT" = "22" ]; then
+        known_host_target="$SSH_HOST"
+    else
+        known_host_target="[$SSH_HOST]:$SSH_SERVER_PORT"
+    fi
+    temporary="$KNOWN_HOSTS.tmp"
+    if [ -f "$KNOWN_HOSTS" ]; then
+        grep -vF "$known_host_target " "$KNOWN_HOSTS" >"$temporary" || true
+    else
+        : >"$temporary"
+    fi
+    printf '%s %s\n' "$known_host_target" "$host_key" >>"$temporary"
+    mv "$temporary" "$KNOWN_HOSTS"
+    chmod 600 "$KNOWN_HOSTS"
+    write_state
+    # A compromised router must not expose the fleet-wide enrollment secret.
+    forget_bootstrap_token
+    log "registered; reverse port is $REVERSE_PORT"
+}
+
+heartbeat() {
+    router_host_key=""
+    for host_key_file in \
+        /etc/dropbear/dropbear_ed25519_host_key \
+        /etc/dropbear/dropbear_rsa_host_key; do
+        if [ -r "$host_key_file" ]; then
+            router_host_key="$(dropbearkey -y -f "$host_key_file" 2>/dev/null | awk '/^ssh-(ed25519|rsa) / { print; exit }')"
+            [ -n "$router_host_key" ] && break
+        fi
+    done
+    mac_value="$(device_mac_address)"
+    body="{\"uuid\":\"$(json_escape "$DEVICE_UUID")\",\"mac_address\":\"$(json_escape "$mac_value")\",\"ssh_host_key\":\"$(json_escape "$router_host_key")\"}"
+    response="$(http_post "$SERVER_URL/api/routers/heartbeat" "$DEVICE_TOKEN" "$body")"
+    support_key="$(json_get "$response" '.support_public_key')"
+    case "$support_key" in
+        ssh-ed25519\ *|ssh-rsa\ *) install_support_key "$support_key" ;;
+        *) log "heartbeat response has no valid support key"; return 1 ;;
+    esac
+}
+
+install_support_key() {
+    support_key="$1"
+    authorized_keys="/etc/dropbear/authorized_keys"
+    temporary="$authorized_keys.tmp"
+    mkdir -p /etc/dropbear
+    if [ -f "$authorized_keys" ]; then
+        grep -v ' router-support-server$' "$authorized_keys" >"$temporary" || true
+    else
+        : >"$temporary"
+    fi
+    key_parts="$(printf '%s' "$support_key" | awk '{ print $1 " " $2 }')"
+    printf 'no-agent-forwarding,no-X11-forwarding %s router-support-server\n' \
+        "$key_parts" >>"$temporary"
+    mv "$temporary" "$authorized_keys"
+    chmod 600 "$authorized_keys"
+}
+
+start_tunnel() {
+    dbclient -N -T \
+        -K 30 -I 0 \
+        -o ExitOnForwardFailure=yes \
+        -i "$KEY_FILE" \
+        -p "$SSH_SERVER_PORT" \
+        -R "127.0.0.1:$REVERSE_PORT:127.0.0.1:22" \
+        "$SSH_USER@$SSH_HOST" &
+    TUNNEL_PID="$!"
+    log "tunnel process started as PID $TUNNEL_PID"
+}
+
+stop_tunnel() {
+    if [ -n "$TUNNEL_PID" ]; then
+        kill "$TUNNEL_PID" 2>/dev/null || true
+        wait "$TUNNEL_PID" 2>/dev/null || true
+    fi
+}
+
+run_daemon() {
+    trap 'stop_tunnel; exit 0' INT TERM
+    while :; do
+        if [ -z "${DEVICE_TOKEN:-}" ]; then
+            register_device || {
+                log "registration failed; retrying"
+                sleep 30
+                continue
+            }
+        fi
+        if [ -z "$TUNNEL_PID" ] || ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+            start_tunnel
+        fi
+        heartbeat || log "heartbeat failed"
+        sleep "${HEARTBEAT_INTERVAL:-30}"
+    done
+}
+
+run_tunnel() {
+    if [ -z "${DEVICE_TOKEN:-}" ]; then
+        register_device
+    fi
+    exec dbclient -N -T \
+        -K 30 -I 0 \
+        -o ExitOnForwardFailure=yes \
+        -i "$KEY_FILE" \
+        -p "$SSH_SERVER_PORT" \
+        -R "127.0.0.1:$REVERSE_PORT:127.0.0.1:22" \
+        "$SSH_USER@$SSH_HOST"
+}
+
+run_heartbeat_loop() {
+    while :; do
+        if [ -z "${DEVICE_TOKEN:-}" ]; then
+            register_device || {
+                log "registration failed; retrying"
+                sleep 30
+                continue
+            }
+        fi
+        heartbeat || log "heartbeat failed"
+        sleep "${HEARTBEAT_INTERVAL:-30}"
+    done
+}
+
+load_config
+case "${1:-run}" in
+    register) register_device ;;
+    heartbeat) heartbeat ;;
+    tunnel) run_tunnel ;;
+    heartbeat-loop) run_heartbeat_loop ;;
+    run) run_daemon ;;
+    *) echo "usage: $0 {register|heartbeat|tunnel|heartbeat-loop|run}" >&2; exit 2 ;;
+esac
+
