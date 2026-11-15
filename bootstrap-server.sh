@@ -40,8 +40,54 @@ cleanup() {
 trap cleanup EXIT
 
 git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$BOOTSTRAP_DIR/source"
-chmod 0755 "$BOOTSTRAP_DIR/source/deploy/install-server.sh"
-"$BOOTSTRAP_DIR/source/deploy/install-server.sh"
+chmod 0755 "$BOOTSTRAP_DIR/source/deploy/install-server.sh" \
+    "$BOOTSTRAP_DIR/source/deploy/update-server.sh" \
+    "$BOOTSTRAP_DIR/source/deploy/uninstall-server.sh"
 
-echo "Bootstrap installation complete"
+installed=0
+if [ -f /etc/router-support/backend.env ] && \
+   [ -f /etc/systemd/system/router-support.service ] && \
+   [ -d /opt/router-support ]; then
+    installed=1
+fi
+
+if [ "$installed" -eq 0 ]; then
+    echo "No existing installation detected. Starting installation..." >&2
+    "$BOOTSTRAP_DIR/source/deploy/install-server.sh"
+    echo "Bootstrap installation complete"
+    exit 0
+fi
+
+echo >&2
+echo "Existing Router Support installation detected." >&2
+echo "  1) Update (recommended)" >&2
+echo "  2) Remove" >&2
+echo "  3) Cancel" >&2
+printf 'Choose an action [1]: ' >&2
+action="${ROUTER_SUPPORT_ACTION:-}"
+if [ -z "$action" ]; then
+    if [ -r /dev/tty ]; then
+        IFS= read -r action </dev/tty || true
+    else
+        IFS= read -r action || true
+    fi
+fi
+action="${action:-1}"
+
+case "$action" in
+    1|update)
+        "$BOOTSTRAP_DIR/source/deploy/update-server.sh"
+        echo "Bootstrap update complete"
+        ;;
+    2|remove|uninstall)
+        "$BOOTSTRAP_DIR/source/deploy/uninstall-server.sh"
+        ;;
+    3|cancel|quit)
+        echo "No changes were made."
+        ;;
+    *)
+        echo "Unknown action: $action" >&2
+        exit 2
+        ;;
+esac
 

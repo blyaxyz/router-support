@@ -153,6 +153,10 @@ wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstra
 новых OpenWrt-устройств. Их необходимо сохранить. Серверные копии хранятся в
 `/etc/router-support/backend.env` с правами только для `root`.
 
+Повторный запуск bootstrap не запускает установку поверх работающего сервера. По
+маркерам `/etc/router-support/backend.env`, systemd unit и `/opt/router-support` он
+определяет существующую установку и открывает меню обновления или удаления.
+
 Он установит `git`, `curl` и CA-сертификаты, клонирует официальный репозиторий во
 временный каталог и запустит серверный quiz. Для форка или другой ветки URL и ref
 можно переопределить окружением:

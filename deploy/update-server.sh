@@ -6,6 +6,13 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)"
 INSTALL_ROOT="/opt/router-support"
 
+[ -f /etc/router-support/backend.env ] && \
+[ -f /etc/systemd/system/router-support.service ] && \
+[ -x "$INSTALL_ROOT/.venv/bin/pip" ] || {
+    echo "A complete Router Support installation was not found; run install-server.sh" >&2
+    exit 1
+}
+
 for directory in backend frontend openwrt-agent deploy scripts docs; do
     install -d -o root -g root -m 0755 "$INSTALL_ROOT/$directory"
     cp -a "$PROJECT_ROOT/$directory/." "$INSTALL_ROOT/$directory/"
