@@ -10,15 +10,21 @@ usage() {
 
 prompt_secret() {
     prompt="$1"
-    if [ -t 2 ] && [ -r /dev/tty ] && command -v stty >/dev/null 2>&1; then
-        terminal_state="$(stty -g </dev/tty)"
-        printf '%s' "$prompt" >&2
-        trap 'stty "$terminal_state" </dev/tty' 0 1 2 15
-        stty -echo </dev/tty
-        IFS= read -r secret_value </dev/tty
-        stty "$terminal_state" </dev/tty
-        trap - 0 1 2 15
-        printf '\n' >&2
+    if [ -t 2 ] && [ -r /dev/tty ]; then
+        if command -v stty >/dev/null 2>&1; then
+            terminal_state="$(stty -g </dev/tty)"
+            printf '%s' "$prompt" >&2
+            trap 'stty "$terminal_state" </dev/tty' 0 1 2 15
+            stty -echo </dev/tty
+            IFS= read -r secret_value </dev/tty
+            stty "$terminal_state" </dev/tty
+            trap - 0 1 2 15
+            printf '\n' >&2
+        else
+            printf '%s' "$prompt" >&2
+            IFS= read -r secret_value </dev/tty
+            printf '\nWarning: stty is unavailable; the token was visible while typing.\n' >&2
+        fi
     else
         printf '%s' "$prompt" >&2
         IFS= read -r secret_value
@@ -28,12 +34,16 @@ prompt_secret() {
 
 [ "$#" -le 2 ] || usage
 if [ "$#" -eq 0 ]; then
-    printf 'Router Support HTTPS address (domain or IP): ' >&2
-    if [ -t 2 ] && [ -r /dev/tty ]; then
-        IFS= read -r server_input </dev/tty
-    else
-        IFS= read -r server_input
-    fi
+    server_input=""
+    while [ -z "$server_input" ]; do
+        printf 'Router Support HTTPS address (domain or IP): ' >&2
+        if [ -t 2 ] && [ -r /dev/tty ]; then
+            IFS= read -r server_input </dev/tty
+        else
+            IFS= read -r server_input
+        fi
+        [ -n "$server_input" ] || echo "Server address is required." >&2
+    done
     case "$server_input" in
         https://*) SERVER_URL="${server_input%/}" ;;
         http://*) echo "Only HTTPS is allowed" >&2; exit 2 ;;
@@ -44,10 +54,10 @@ else
 fi
 
 BOOTSTRAP_TOKEN="${2:-${ROUTER_SUPPORT_BOOTSTRAP_TOKEN:-}}"
-if [ -z "$BOOTSTRAP_TOKEN" ]; then
+while [ -z "$BOOTSTRAP_TOKEN" ]; do
     BOOTSTRAP_TOKEN="$(prompt_secret 'Bootstrap token: ')"
-fi
-[ -n "$BOOTSTRAP_TOKEN" ] || usage
+    [ -n "$BOOTSTRAP_TOKEN" ] || echo "Bootstrap token is required." >&2
+done
 SOURCE_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 CONFIG_DIR="/etc/router-support"
 
@@ -113,5 +123,8 @@ chmod 0755 /usr/sbin/router-support /usr/sbin/router-support-uninstall \
 /usr/sbin/router-support register
 /etc/init.d/router-support enable
 /etc/init.d/router-support restart
-echo "router-support installed, registered and started"
+echo
+echo "Router Support installation completed successfully."
+echo "UUID: $(cat "$CONFIG_DIR/uuid")"
+echo "Service: enabled and started"
 

@@ -38,5 +38,11 @@ download "$RAW_ROOT/openwrt-agent/files/router-support.init" "$INSTALL_DIR/files
 chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/uninstall.sh" \
     "$INSTALL_DIR/files/router-support" "$INSTALL_DIR/files/router-support.init"
 
-"$INSTALL_DIR/install.sh"
+if [ -t 2 ] && [ -r /dev/tty ]; then
+    # wget|sh leaves stdin at EOF. Give the downloaded interactive installer
+    # the controlling terminal so every quiz answer can still be read.
+    "$INSTALL_DIR/install.sh" </dev/tty
+else
+    "$INSTALL_DIR/install.sh"
+fi
 echo "Router Support agent installation complete" >&2
