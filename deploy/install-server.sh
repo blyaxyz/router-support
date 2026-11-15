@@ -14,6 +14,7 @@ Options:
   --telemt-config FILE Telemt TOML file (default: auto-detect)
   --internal-https-port PORT  Apache TLS upstream for Telemt (default: 8443)
   --allow-wsl         Confirm Windows firewall/port forwarding is configured
+  --skip-public-http-check  Bypass WSL public HTTP preflight (not recommended)
   --email EMAIL       Let's Encrypt email; registration without email if omitted
   --ip-certificate IP Request a 6-day Let's Encrypt certificate for this IPv4
   --no-tls            Configure HTTP only (development only)
@@ -173,6 +174,45 @@ verify_local_acme_webroot() {
         echo "Unexpected response from the local ACME challenge path." >&2
         exit 1
     fi
+}
+
+verify_wsl_public_http() {
+    local probe_name probe_file expected response wsl_ip
+    [ "$WSL_MODE" -eq 1 ] || return 0
+    [ "$ENABLE_TLS" -eq 1 ] || return 0
+    [ "$SKIP_PUBLIC_HTTP_CHECK" -eq 0 ] || {
+        echo "WARNING: WSL public HTTP preflight was explicitly skipped." >&2
+        return 0
+    }
+    probe_name="router-support-wsl-preflight-$$"
+    probe_file="/var/www/router-support-acme/.well-known/acme-challenge/$probe_name"
+    expected="router-support-wsl-ok-$$"
+    printf '%s' "$expected" >"$probe_file"
+    echo "Checking public Windows -> WSL HTTP forwarding..." >&2
+    response="$(curl -4fsS --noproxy '*' --connect-timeout 6 --max-time 12 \
+        "http://$DOMAIN/.well-known/acme-challenge/$probe_name" 2>/dev/null || true)"
+    rm -f "$probe_file"
+    if [ "$response" = "$expected" ]; then
+        echo "Public WSL HTTP preflight passed." >&2
+        return 0
+    fi
+    wsl_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    cat >&2 <<EOF
+Public HTTP preflight failed for http://$DOMAIN/.
+Apache works inside WSL, but Windows/NAT did not return the ACME challenge.
+Current WSL address: ${wsl_ip:-unknown}
+
+From an elevated Windows PowerShell, inspect and recreate portproxy rules:
+  netsh interface portproxy show v4tov4
+  \$WslIp = ((wsl.exe hostname -I).Trim() -split '\\s+')[0]
+  netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80
+  netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=80 connectaddress=\$WslIp connectport=80
+
+Also allow TCP/80 in Windows/Hyper-V firewall and forward router/cloud TCP/80 to Windows.
+The installer will roll back without contacting Let's Encrypt.
+Use --skip-public-http-check only when NAT loopback is unavailable and an external test succeeds.
+EOF
+    exit 1
 }
 
 declare -A ROLLBACK_PRESENT=()
@@ -439,6 +479,7 @@ TELEMT_CONFIG=""
 INTERNAL_HTTPS_PORT="8443"
 ALLOW_WSL=0
 WSL_MODE=0
+SKIP_PUBLIC_HTTP_CHECK=0
 [ "$(id -u)" -eq 0 ] || { echo "Run as root" >&2; exit 1; }
 if is_wsl; then
     WSL_MODE=1
@@ -456,6 +497,7 @@ while [ "$#" -gt 0 ]; do
         --telemt-config) TELEMT_CONFIG="${2:-}"; shift 2 ;;
         --internal-https-port) INTERNAL_HTTPS_PORT="${2:-}"; shift 2 ;;
         --allow-wsl) ALLOW_WSL=1; shift ;;
+        --skip-public-http-check) SKIP_PUBLIC_HTTP_CHECK=1; shift ;;
         --email) EMAIL="${2:-}"; shift 2 ;;
         --ip-certificate) IP_CERT_ADDRESS="${2:-}"; shift 2 ;;
         --no-tls) ENABLE_TLS=0; shift ;;
@@ -651,6 +693,7 @@ systemctl is-active --quiet apache2 || {
     exit 1
 }
 verify_local_acme_webroot
+verify_wsl_public_http
 
 if [ "$ENABLE_TLS" -eq 1 ]; then
     MANUAL_SSL_VHOST=0

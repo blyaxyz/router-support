@@ -67,6 +67,19 @@ New-NetFirewallRule -DisplayName "Router Support HTTP HTTPS" -Direction Inbound 
 `portproxy` необходимо обновлять автоматически при старте Windows. Для SSH создайте
 аналогичное правило с публичного Windows-порта на SSH-порт внутри WSL.
 
+Проверьте, что `connectaddress` совпадает с текущим адресом:
+
+```powershell
+netsh interface portproxy show v4tov4
+$WslIp = ((wsl.exe hostname -I).Trim() -split '\s+')[0]
+Write-Host $WslIp
+Test-NetConnection -ComputerName $WslIp -Port 80
+```
+
+Если TCP-соединение с публичным IP принимается, но HTTP не возвращает ответ, чаще всего
+`portproxy` указывает на старый WSL IP. Удалите старое правило и создайте его заново с
+актуальным `$WslIp`.
+
 Если Windows находится за роутером или firewall облачного провайдера, `80`, `443` и
 публичный SSH-порт нужно дополнительно направить на Windows-хост.
 
@@ -79,6 +92,12 @@ curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstr
 Установщик обнаружит WSL, проверит PID 1 и попросит подтвердить, что Windows networking
 уже настроен. Для неинтерактивного режима требуется явный параметр `--allow-wsl` у
 `deploy/install-server.sh`.
+
+Перед Certbot установщик создаёт временный challenge-файл и получает его через
+публичный домен. Если цепочка интернет/Windows/WSL не возвращает точное содержимое,
+установка останавливается и откатывается до обращения к Let’s Encrypt. В сетях без NAT
+loopback проверку можно обойти параметром `--skip-public-http-check`, но только после
+успешного запроса того же URL с внешнего устройства, например через мобильный интернет.
 
 Каталог `/run/sshd` создаётся через `systemd-tmpfiles`; запускать `/run/sshd` как
 команду не нужно. Сервис Apache в Debian/WSL называется `apache2.service`:
