@@ -137,6 +137,14 @@ detect_wsl_ipv4() {
         awk '{for (index = 1; index <= NF; index++) if ($index == "src") {print $(index + 1); exit}}'
 }
 
+detect_wsl_networking_mode() {
+    local mode="unknown"
+    if command -v wslinfo >/dev/null 2>&1; then
+        mode="$(wslinfo --networking-mode 2>/dev/null | tr -d '[:space:]' || true)"
+    fi
+    case "$mode" in nat|mirrored) printf '%s' "$mode" ;; *) printf 'unknown' ;; esac
+}
+
 ensure_apache_port_available() {
     local port="$1" listeners
     command -v ss >/dev/null 2>&1 || return 0
@@ -182,7 +190,7 @@ verify_local_acme_webroot() {
 }
 
 verify_wsl_public_http() {
-    local probe_name probe_file expected response wsl_ip
+    local probe_name probe_file expected response wsl_ip networking_mode
     [ "$WSL_MODE" -eq 1 ] || return 0
     [ "$ENABLE_TLS" -eq 1 ] || return 0
     [ "$SKIP_PUBLIC_HTTP_CHECK" -eq 0 ] || {
@@ -202,18 +210,33 @@ verify_wsl_public_http() {
         return 0
     fi
     wsl_ip="$(detect_wsl_ipv4)"
-    cat >&2 <<EOF
-Public HTTP preflight failed for http://$DOMAIN/.
-Apache works inside WSL, but Windows/NAT did not return the ACME challenge.
-Current WSL address: ${wsl_ip:-unknown}
+    networking_mode="$(detect_wsl_networking_mode)"
+    echo "Public HTTP preflight failed for http://$DOMAIN/." >&2
+    echo "Apache works inside WSL, but the public path did not return the ACME challenge." >&2
+    echo "WSL networking mode: $networking_mode" >&2
+    echo "Current routed WSL address: ${wsl_ip:-unknown}" >&2
+    echo >&2
+    if [ "$networking_mode" = "mirrored" ]; then
+        cat >&2 <<'EOF'
+Mirrored mode does not need netsh portproxy. From an elevated Windows PowerShell:
+  New-NetFirewallHyperVRule -Name "RouterSupportHTTP" -DisplayName "Router Support HTTP" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 80
+  New-NetFirewallHyperVRule -Name "RouterSupportHTTPS" -DisplayName "Router Support HTTPS" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 443
 
+Forward router/cloud TCP 80 and 443 directly to the Windows LAN address.
+Remove stale portproxy rules if they reserve ports needed by this installation.
+EOF
+    else
+    cat >&2 <<EOF
 From an elevated Windows PowerShell, inspect and recreate portproxy rules:
   netsh interface portproxy show v4tov4
   \$WslIp = (wsl.exe sh -lc "ip -4 route get 1.1.1.1 | sed -n 's/.* src \\([^ ]*\\).*/\\1/p'").Trim()
   netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80
   netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=80 connectaddress=\$WslIp connectport=80
 
-Also allow TCP/80 in Windows/Hyper-V firewall and forward router/cloud TCP/80 to Windows.
+Also allow TCP 80/443 in Windows firewall and forward router/cloud TCP 80/443 to Windows.
+EOF
+    fi
+    cat >&2 <<'EOF'
 The installer will roll back without contacting Let's Encrypt.
 Use --skip-public-http-check only when NAT loopback is unavailable and an external test succeeds.
 EOF
@@ -385,10 +408,12 @@ interrupt_install() {
 }
 
 interactive_setup() {
-    local public_ip panel_default email_answer listener_80 listener_443 telemt_answer wsl_answer
+    local public_ip panel_default email_answer listener_80 listener_443 telemt_answer wsl_answer wsl_networking
     echo "Router Support Panel — server setup" >&2
     if [ "$WSL_MODE" -eq 1 ]; then
-        echo "WSL detected. Public installation requires Windows forwarding/firewall for TCP 80, 443 and SSH." >&2
+        wsl_networking="$(detect_wsl_networking_mode)"
+        echo "WSL detected (networking: $wsl_networking)." >&2
+        echo "Public installation requires Windows forwarding/firewall for TCP 80, 443 and SSH." >&2
         echo "WSL systemd services do not by themselves keep the WSL VM running." >&2
         wsl_answer="$(ask_yes_no 'Windows networking and automatic WSL startup are configured' no)"
         [ "$wsl_answer" = "yes" ] || {
