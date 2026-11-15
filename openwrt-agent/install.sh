@@ -10,7 +10,8 @@ usage() {
 
 prompt_secret() {
     prompt="$1"
-    if [ -t 2 ] && [ -r /dev/tty ]; then
+    secret_value=""
+    if [ -r /dev/tty ]; then
         if command -v stty >/dev/null 2>&1; then
             terminal_state="$(stty -g </dev/tty)"
             printf '%s' "$prompt" >&2
@@ -29,7 +30,7 @@ prompt_secret() {
         printf '%s' "$prompt" >&2
         IFS= read -r secret_value
     fi
-    printf '%s' "$secret_value"
+    BOOTSTRAP_TOKEN="$secret_value"
 }
 
 [ "$#" -le 2 ] || usage
@@ -55,7 +56,7 @@ fi
 
 BOOTSTRAP_TOKEN="${2:-${ROUTER_SUPPORT_BOOTSTRAP_TOKEN:-}}"
 while [ -z "$BOOTSTRAP_TOKEN" ]; do
-    BOOTSTRAP_TOKEN="$(prompt_secret 'Bootstrap token: ')"
+    prompt_secret 'Bootstrap token: '
     [ -n "$BOOTSTRAP_TOKEN" ] || echo "Bootstrap token is required." >&2
 done
 SOURCE_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
