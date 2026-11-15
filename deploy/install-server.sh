@@ -132,6 +132,11 @@ EOF
     fi
 }
 
+detect_wsl_ipv4() {
+    ip -4 route get 1.1.1.1 2>/dev/null | \
+        awk '{for (index = 1; index <= NF; index++) if ($index == "src") {print $(index + 1); exit}}'
+}
+
 ensure_apache_port_available() {
     local port="$1" listeners
     command -v ss >/dev/null 2>&1 || return 0
@@ -196,7 +201,7 @@ verify_wsl_public_http() {
         echo "Public WSL HTTP preflight passed." >&2
         return 0
     fi
-    wsl_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    wsl_ip="$(detect_wsl_ipv4)"
     cat >&2 <<EOF
 Public HTTP preflight failed for http://$DOMAIN/.
 Apache works inside WSL, but Windows/NAT did not return the ACME challenge.
@@ -204,7 +209,7 @@ Current WSL address: ${wsl_ip:-unknown}
 
 From an elevated Windows PowerShell, inspect and recreate portproxy rules:
   netsh interface portproxy show v4tov4
-  \$WslIp = ((wsl.exe hostname -I).Trim() -split '\\s+')[0]
+  \$WslIp = (wsl.exe sh -lc "ip -4 route get 1.1.1.1 | sed -n 's/.* src \\([^ ]*\\).*/\\1/p'").Trim()
   netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=80
   netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=80 connectaddress=\$WslIp connectport=80
 

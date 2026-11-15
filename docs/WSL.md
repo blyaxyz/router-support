@@ -57,7 +57,7 @@ New-NetFirewallHyperVRule -Name "RouterSupportHTTPS" -DisplayName "Router Suppor
 В PowerShell от администратора получите текущий адрес WSL и создайте перенаправления:
 
 ```powershell
-$WslIp = ((wsl.exe hostname -I).Trim() -split '\s+')[0]
+$WslIp = (wsl.exe sh -lc "ip -4 route get 1.1.1.1 | sed -n 's/.* src \([^ ]*\).*/\1/p'").Trim()
 netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=80 connectaddress=$WslIp connectport=80
 netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=443 connectaddress=$WslIp connectport=443
 New-NetFirewallRule -DisplayName "Router Support HTTP HTTPS" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,443
@@ -71,9 +71,17 @@ New-NetFirewallRule -DisplayName "Router Support HTTP HTTPS" -Direction Inbound 
 
 ```powershell
 netsh interface portproxy show v4tov4
-$WslIp = ((wsl.exe hostname -I).Trim() -split '\s+')[0]
+$WslIp = (wsl.exe sh -lc "ip -4 route get 1.1.1.1 | sed -n 's/.* src \([^ ]*\).*/\1/p'").Trim()
 Write-Host $WslIp
 Test-NetConnection -ComputerName $WslIp -Port 80
+```
+
+Не используйте адреса интерфейсов `docker0` и Docker bridge (`172.17.x.x`,
+`172.18.x.x`). Проверить режим и исходящий адрес внутри WSL можно командами:
+
+```sh
+wslinfo --networking-mode 2>/dev/null || true
+ip -4 route get 1.1.1.1
 ```
 
 Если TCP-соединение с публичным IP принимается, но HTTP не возвращает ответ, чаще всего
