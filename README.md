@@ -234,8 +234,101 @@ WSL 2 поддерживается для тестовых и специальн
 systemd, обеспечить автоматический запуск дистрибутива и настроить Windows networking.
 
 Снаружи Windows должны быть доступны только TCP `80`, `443` и выбранный публичный
-SSH-порт. Порты `22001–22999`, `31000+` и `8443` остаются локальными. Готовые команды
-PowerShell для `networkingMode=mirrored` и NAT/`portproxy` приведены в отдельной
-[инструкции WSL](docs/WSL.md).
+SSH-порт. Все следующие команды запускаются в PowerShell от имени администратора.
+
+### Windows 11: mirrored networking
+
+Добавьте в `%UserProfile%\.wslconfig`:
+
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+
+Примените настройку:
+
+```powershell
+wsl.exe --shutdown
+```
+
+Откройте сразу все необходимые порты. Замените `44221` на SSH-порт, который слушает
+`sshd` внутри WSL и который будет указан в серверном quiz:
+
+```powershell
+$SshPort = 44221
+$RequiredPorts = @(80, 443, $SshPort)
+$WslCreatorId = '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}'
+
+Remove-NetFirewallHyperVRule `
+    -Name "RouterSupportInbound" `
+    -ErrorAction SilentlyContinue
+
+New-NetFirewallHyperVRule `
+    -Name "RouterSupportInbound" `
+    -DisplayName "Router Support inbound" `
+    -Direction Inbound `
+    -VMCreatorId $WslCreatorId `
+    -Protocol TCP `
+    -LocalPorts $RequiredPorts
+```
+
+В режиме `mirrored` правила `netsh portproxy` не нужны.
+
+### WSL 2 NAT: Windows portproxy
+
+В NAT-режиме публичный SSH-порт Windows может отличаться от внутреннего порта WSL.
+Следующий пример направляет Windows `44221` на WSL `22`, а `80/443` — на одноимённые
+порты:
+
+```powershell
+$PublicSshPort = 44221
+$WslSshPort = 22
+$WslIp = (wsl.exe sh -lc "ip -4 route get 1.1.1.1 | sed -n 's/.* src \([^ ]*\).*/\1/p'").Trim()
+
+if (-not $WslIp) {
+    throw "Не удалось определить IPv4-адрес WSL"
+}
+
+$PortMap = @(
+    @{ Public = 80; Internal = 80 },
+    @{ Public = 443; Internal = 443 },
+    @{ Public = $PublicSshPort; Internal = $WslSshPort }
+)
+
+foreach ($Port in $PortMap) {
+    netsh interface portproxy delete v4tov4 `
+        listenaddress=0.0.0.0 `
+        listenport=$($Port.Public) | Out-Null
+
+    netsh interface portproxy add v4tov4 `
+        listenaddress=0.0.0.0 `
+        listenport=$($Port.Public) `
+        connectaddress=$WslIp `
+        connectport=$($Port.Internal) | Out-Null
+}
+
+Remove-NetFirewallRule `
+    -DisplayName "Router Support inbound" `
+    -ErrorAction SilentlyContinue
+
+New-NetFirewallRule `
+    -DisplayName "Router Support inbound" `
+    -Direction Inbound `
+    -Action Allow `
+    -Protocol TCP `
+    -LocalPort 80,443,$PublicSshPort
+
+netsh interface portproxy show v4tov4
+```
+
+После перезапуска WSL его NAT-адрес может измениться. В таком случае повторно выполните
+этот блок, чтобы обновить `connectaddress`.
+
+Если Windows находится за домашним роутером или firewall облачного провайдера, TCP
+`80`, `443` и `$PublicSshPort` нужно также направить на Windows-хост.
+
+Не открывайте в Windows порты `22001–22999`, `31000+` и `8443`: они привязаны к
+`127.0.0.1` внутри WSL и используются только backend. Дополнительная диагностика и
+настройка автоматического запуска описаны в [полной инструкции WSL](docs/WSL.md).
 
 Лицензия: [MIT](LICENSE).
