@@ -56,6 +56,40 @@ valid_ipv4() {
     done
 }
 
+valid_public_ipv4() {
+    local ipv4="$1" first second
+    valid_ipv4 "$ipv4" || return 1
+    IFS=. read -r first second _ <<<"$ipv4"
+    [ "$first" -ne 0 ] && [ "$first" -ne 10 ] && [ "$first" -ne 127 ] && \
+        [ "$first" -lt 224 ] || return 1
+    [ "$first" -eq 169 ] && [ "$second" -eq 254 ] && return 1
+    [ "$first" -eq 172 ] && [ "$second" -ge 16 ] && [ "$second" -le 31 ] && return 1
+    [ "$first" -eq 192 ] && [ "$second" -eq 168 ] && return 1
+    return 0
+}
+
+detect_public_ipv4() {
+    local candidate="${ROUTER_SUPPORT_PUBLIC_IP:-}" endpoint
+    if valid_public_ipv4 "$candidate"; then
+        printf '%s' "$candidate"
+        return
+    fi
+    if command -v curl >/dev/null 2>&1; then
+        for endpoint in https://api.ipify.org https://checkip.amazonaws.com; do
+            candidate="$(curl -4fsS --max-time 4 "$endpoint" 2>/dev/null || true)"
+            candidate="${candidate//$'\n'/}"
+            if valid_public_ipv4 "$candidate"; then
+                printf '%s' "$candidate"
+                return
+            fi
+        done
+    fi
+    if [[ "${SSH_CONNECTION:-}" =~ [[:space:]]([0-9]{1,3}(\.[0-9]{1,3}){3})[[:space:]][0-9]{1,5}$ ]]; then
+        candidate="${BASH_REMATCH[1]}"
+        valid_public_ipv4 "$candidate" && printf '%s' "$candidate"
+    fi
+}
+
 detect_ssh_port() {
     local candidate=""
     if [[ "${SSH_CONNECTION:-}" =~ [[:space:]]([0-9]{1,5})$ ]]; then
@@ -71,9 +105,13 @@ detect_ssh_port() {
 }
 
 interactive_setup() {
+    local public_ip panel_default email_answer
     echo "Router Support Panel — server setup" >&2
     echo "Ports 80 and 443 must be open in the provider firewall." >&2
-    panel_address="$(ask 'Public panel domain or VPS IPv4 (IP uses sslip.io)' '')"
+    public_ip="$(detect_public_ipv4)"
+    panel_default="$public_ip"
+    [ -n "$public_ip" ] && echo "Detected public IPv4: $public_ip" >&2
+    panel_address="$(ask 'Public panel domain or VPS IPv4 (IP uses sslip.io)' "$panel_default")"
     case "$panel_address" in
         [0-9]*.[0-9]*.[0-9]*.[0-9]*)
             SSH_HOST="$panel_address"
@@ -84,11 +122,17 @@ interactive_setup() {
             ;;
         *)
             DOMAIN="$panel_address"
-            SSH_HOST="$(ask 'Public SSH host/IP of the VPS' "$DOMAIN")"
+            SSH_HOST="${public_ip:-$DOMAIN}"
             ;;
     esac
+    SSH_HOST="$(ask 'Public SSH host/IP of the VPS' "$SSH_HOST")"
     SSH_PORT="$(ask 'Public SSH port of the VPS' "$SSH_PORT")"
-    EMAIL="$(ask "Let's Encrypt email (optional)" "")"
+    email_answer="$(ask "Let's Encrypt email (optional; enter 'skip' to omit)" "skip")"
+    if [ "$email_answer" = "skip" ]; then
+        EMAIL=""
+    else
+        EMAIL="$email_answer"
+    fi
     tls_answer="$(ask_yes_no "Configure HTTPS with Let's Encrypt" yes)"
     if [ "$tls_answer" != "yes" ]; then
         ENABLE_TLS=0
