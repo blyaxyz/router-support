@@ -43,29 +43,44 @@ systemctl status
 networkingMode=mirrored
 ```
 
-После `wsl.exe --shutdown` разрешите входящие порты в PowerShell от администратора:
+После `wsl.exe --shutdown` разрешите все внешние порты проекта одной командой в
+PowerShell от администратора. Замените `44221` на публичный SSH-порт из quiz:
 
 ```powershell
-New-NetFirewallHyperVRule -Name "RouterSupportHTTP" -DisplayName "Router Support HTTP" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 80
-New-NetFirewallHyperVRule -Name "RouterSupportHTTPS" -DisplayName "Router Support HTTPS" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 443
+$SshPort = 44221
+$RequiredPorts = @(80, 443, $SshPort)
+Remove-NetFirewallHyperVRule -Name "RouterSupportInbound" -ErrorAction SilentlyContinue
+New-NetFirewallHyperVRule -Name "RouterSupportInbound" -DisplayName "Router Support inbound" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts $RequiredPorts
 ```
 
-Отдельно разрешите выбранный публичный SSH-порт.
+В mirrored-режиме `netsh portproxy` не нужен. Публичный SSH-порт должен совпадать с
+портом, который слушает `sshd` внутри WSL.
 
 ### WSL 2 NAT: portproxy
 
-В PowerShell от администратора получите текущий адрес WSL и создайте перенаправления:
+В PowerShell от администратора получите текущий адрес WSL и создайте все необходимые
+перенаправления. Публичный SSH-порт Windows может отличаться от порта `sshd` внутри WSL:
 
 ```powershell
+$PublicSshPort = 44221
+$WslSshPort = 22
 $WslIp = (wsl.exe sh -lc "ip -4 route get 1.1.1.1 | sed -n 's/.* src \([^ ]*\).*/\1/p'").Trim()
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=80 connectaddress=$WslIp connectport=80
-netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=443 connectaddress=$WslIp connectport=443
-New-NetFirewallRule -DisplayName "Router Support HTTP HTTPS" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,443
+$PortMap = @(
+    @{ Public = 80; Internal = 80 },
+    @{ Public = 443; Internal = 443 },
+    @{ Public = $PublicSshPort; Internal = $WslSshPort }
+)
+foreach ($Port in $PortMap) {
+    netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$($Port.Public) | Out-Null
+    netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$($Port.Public) connectaddress=$WslIp connectport=$($Port.Internal) | Out-Null
+}
+Remove-NetFirewallRule -DisplayName "Router Support inbound" -ErrorAction SilentlyContinue
+New-NetFirewallRule -DisplayName "Router Support inbound" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,443,$PublicSshPort
+netsh interface portproxy show v4tov4
 ```
 
 Адрес WSL в NAT-режиме может измениться после перезапуска. В этом случае правила
-`portproxy` необходимо обновлять автоматически при старте Windows. Для SSH создайте
-аналогичное правило с публичного Windows-порта на SSH-порт внутри WSL.
+`portproxy` необходимо обновлять автоматически при старте Windows.
 
 Проверьте, что `connectaddress` совпадает с текущим адресом:
 
@@ -90,6 +105,17 @@ ip -4 route get 1.1.1.1
 
 Если Windows находится за роутером или firewall облачного провайдера, `80`, `443` и
 публичный SSH-порт нужно дополнительно направить на Windows-хост.
+
+### Какие высокие порты открывать не нужно
+
+- `22001–22999` — reverse SSH-порты зарегистрированных роутеров;
+- `31000+` — временные локальные форварды support-сессий;
+- `8443` — локальный Apache upstream при совместной работе с Telemt.
+
+Все они создаются на `127.0.0.1` и используются только backend внутри той же WSL.
+Публичный браузер всегда обращается к Apache по `443`, а Apache/backend уже проксируют
+запрос на нужный локальный порт. Открытие этих диапазонов в Windows не требуется и
+создаёт ненужный обход публичного reverse proxy.
 
 ## 3. Запустите установку
 

@@ -20,6 +20,48 @@
 а также публичным SSH-портом (по умолчанию `22`, можно указать другой). Reverse-порты
 `22001–22999` наружу открывать не нужно.
 
+### Все необходимые порты для WSL
+
+Для WSL снаружи нужны только TCP `80`, `443` и публичный SSH-порт, который указан в
+серверном quiz. Например, если SSH опубликован на `44221`, откройте сразу весь набор.
+
+Windows 11 с `networkingMode=mirrored`, PowerShell от администратора:
+
+```powershell
+$SshPort = 44221
+$RequiredPorts = @(80, 443, $SshPort)
+Remove-NetFirewallHyperVRule -Name "RouterSupportInbound" -ErrorAction SilentlyContinue
+New-NetFirewallHyperVRule -Name "RouterSupportInbound" -DisplayName "Router Support inbound" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts $RequiredPorts
+```
+
+Для WSL в NAT-режиме укажите отдельно публичный Windows-порт SSH и фактический порт
+`sshd` внутри WSL. В примере Windows `44221` направляется на WSL `22`:
+
+```powershell
+$PublicSshPort = 44221
+$WslSshPort = 22
+$WslIp = (wsl.exe sh -lc "ip -4 route get 1.1.1.1 | sed -n 's/.* src \([^ ]*\).*/\1/p'").Trim()
+
+$PortMap = @(
+    @{ Public = 80; Internal = 80 },
+    @{ Public = 443; Internal = 443 },
+    @{ Public = $PublicSshPort; Internal = $WslSshPort }
+)
+foreach ($Port in $PortMap) {
+    netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$($Port.Public) | Out-Null
+    netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$($Port.Public) connectaddress=$WslIp connectport=$($Port.Internal) | Out-Null
+}
+Remove-NetFirewallRule -DisplayName "Router Support inbound" -ErrorAction SilentlyContinue
+New-NetFirewallRule -DisplayName "Router Support inbound" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 80,443,$PublicSshPort
+netsh interface portproxy show v4tov4
+```
+
+Те же три порта должны быть направлены на Windows-хост в домашнем роутере или открыты
+в firewall облачного провайдера. Диапазоны reverse SSH `22001–22999`, временные
+support-порты `31000+` и внутренний Telemt-порт `8443` слушают только `127.0.0.1` и
+доступны backend внутри WSL. Не создавайте для них Windows firewall/portproxy-правила.
+Подробности и команды проверки находятся в [инструкции WSL](docs/WSL.md).
+
 Установка через `curl`:
 
 ```sh

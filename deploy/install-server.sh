@@ -494,6 +494,10 @@ interactive_setup() {
     echo "  TLS:      $([ "$ENABLE_TLS" -eq 1 ] && echo enabled || echo disabled)" >&2
     [ -z "$IP_CERT_ADDRESS" ] || echo "  IP SAN:   $IP_CERT_ADDRESS (short-lived)" >&2
     [ -z "$EMAIL" ] || echo "  Email:    $EMAIL" >&2
+    if [ "$WSL_MODE" -eq 1 ]; then
+        echo "  Windows:  allow/forward TCP 80, 443 and public SSH $SSH_PORT" >&2
+        echo "             do not expose internal 22001-22999, 31000+ or 8443" >&2
+    fi
     confirm="$(ask_yes_no 'Start installation' 'yes')"
     [ "$confirm" = "yes" ] || { echo "Installation cancelled" >&2; exit 0; }
 }
