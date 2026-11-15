@@ -114,6 +114,31 @@ Timer запускается дважды в сутки; Certbot обновля�
 окно и выполняет reload Apache через deploy-hook. Публичный порт `80` должен оставаться
 доступным для `http-01` challenge.
 
+## Telemt на публичном порту 443
+
+Проверка управляемых маршрутов и резервной копии:
+
+```sh
+grep -A20 'BEGIN ROUTER SUPPORT' /etc/telemt/telemt.toml
+ls -l /etc/telemt/telemt.toml.router-support-backup
+```
+
+Повторная синхронизация сертификата и маршрутов выполняется обычной командой:
+
+```sh
+/opt/router-support/deploy/sync-service-domains.sh
+```
+
+Скрипт перезапускает Telemt, проверяет его systemd-состояние и открывает `/healthz`
+через локальный SNI-маршрут. При любой ошибке прежний TOML восстанавливается.
+
+Для полного ручного отката интеграции:
+
+```sh
+cp -a /etc/telemt/telemt.toml.router-support-backup /etc/telemt/telemt.toml
+systemctl restart telemt
+```
+
 ## Безопасность
 
 - смените переданные или временные root-пароли;

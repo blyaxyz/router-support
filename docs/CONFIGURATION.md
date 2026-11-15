@@ -19,6 +19,9 @@
 | `ROUTER_SUPPORT_SUPPORT_PUBLIC_KEY` | Публичная часть ключа | путь с `.pub` |
 | `ROUTER_SUPPORT_PUBLIC_DOMAIN` | Основной HTTPS-домен | `support.example.com` |
 | `ROUTER_SUPPORT_TLS_IP` | IPv4 в short-lived сертификате, если включён IP-режим | `203.0.113.10` |
+| `ROUTER_SUPPORT_TELEMT_INTEGRATION` | Маршрутизация публичного HTTPS через Telemt | `1` |
+| `ROUTER_SUPPORT_TELEMT_CONFIG` | TOML-конфигурация Telemt | `/etc/telemt/telemt.toml` |
+| `ROUTER_SUPPORT_INTERNAL_HTTPS_PORT` | Локальный HTTPS-порт Apache за Telemt | `8443` |
 | `ROUTER_SUPPORT_SESSION_SECONDS` | Таймаут поддержки | `3600` |
 | `ROUTER_SUPPORT_HEARTBEAT_TIMEOUT` | Порог offline | `90` |
 

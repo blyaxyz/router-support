@@ -23,7 +23,7 @@ echo "Source: $REPO_URL ($REPO_REF)" >&2
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git
+apt-get install -y ca-certificates curl git iproute2
 
 BOOTSTRAP_DIR="$(mktemp -d /tmp/router-support-bootstrap.XXXXXX)"
 cleanup() {

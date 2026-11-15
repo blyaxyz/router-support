@@ -17,6 +17,21 @@ Apache, Python venv, Certbot и OpenSSH устанавливаются авто�
 именем конфликтующего процесса, если `80` или `443` занят не Apache. До запуска
 Certbot дополнительно проверяется локальная отдача ACME challenge-файла.
 
+Исключение — обнаруженный Telemt на `443`: квиз предлагает штатную SNI-интеграцию.
+Apache слушает TLS только на `127.0.0.1:8443`, а управляемые записи
+`[censorship.exclusive_mask]` направляют домен панели и сервисные поддомены через
+Telemt. Порт `80` остаётся Apache для HTTP-01 и автоматического продления сертификата.
+Перед изменением создаётся `<telemt.toml>.router-support-backup`; при ошибке рестарта
+или проверки `/healthz` прежняя конфигурация восстанавливается автоматически.
+Маршрутизация использует официальный механизм Telemt
+[`censorship.exclusive_mask`](https://github.com/telemt/telemt/blob/main/docs/Config_params/CONFIG_PARAMS.ru.md#exclusive_mask).
+
+В режиме Telemt используется доменное имя, поскольку TLS-подключение непосредственно
+к IP не содержит SNI и не может быть отделено от MTProxy-трафика. При вводе IPv4 квиз
+автоматически использует `support.<IP>.sslip.io`. После регистрации новых роутеров
+`sync-service-domains.sh` обновляет одновременно SAN-сертификат и управляемые маршруты
+Telemt.
+
 ### OpenWrt
 
 - Dropbear `dbclient` и `dropbearkey`;

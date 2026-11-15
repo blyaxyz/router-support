@@ -10,6 +10,9 @@ Options:
   --domain DOMAIN     Public panel domain (required)
   --ssh-host HOST     Public IP/name used by OpenWrt SSH tunnels (required)
   --ssh-port PORT     Public SSH port of the VPS (detected, otherwise 22)
+  --telemt-integration Route panel TLS through Telemt SNI fallback on port 443
+  --telemt-config FILE Telemt TOML file (default: auto-detect)
+  --internal-https-port PORT  Apache TLS upstream for Telemt (default: 8443)
   --email EMAIL       Let's Encrypt email; registration without email if omitted
   --ip-certificate IP Request a 6-day Let's Encrypt certificate for this IPv4
   --no-tls            Configure HTTP only (development only)
@@ -116,6 +119,19 @@ ensure_apache_port_available() {
     fi
 }
 
+port_listeners() {
+    local port="$1"
+    command -v ss >/dev/null 2>&1 || return 0
+    ss -H -ltnp "sport = :$port" 2>/dev/null || true
+}
+
+detect_telemt_config() {
+    local candidate
+    for candidate in /etc/telemt/telemt.toml /etc/telemt/config.toml; do
+        [ -f "$candidate" ] && { printf '%s' "$candidate"; return; }
+    done
+}
+
 verify_local_acme_webroot() {
     local probe_name="router-support-preflight-$$" probe_file response
     probe_file="/var/www/router-support-acme/.well-known/acme-challenge/$probe_name"
@@ -135,9 +151,34 @@ verify_local_acme_webroot() {
 }
 
 interactive_setup() {
-    local public_ip panel_default email_answer
+    local public_ip panel_default email_answer listener_80 listener_443 telemt_answer
     echo "Router Support Panel — server setup" >&2
     echo "Ports 80 and 443 must be open in the provider firewall." >&2
+    listener_80="$(port_listeners 80)"
+    listener_443="$(port_listeners 443)"
+    if [ -n "$listener_80" ] && [[ "$listener_80" != *apache2* ]]; then
+        echo "TCP port 80 is occupied and is required for ACME HTTP-01:" >&2
+        echo "$listener_80" >&2
+        echo "The installer has not made any changes." >&2
+        exit 1
+    fi
+    if [[ "$listener_443" == *telemt* ]]; then
+        echo "Detected Telemt on TCP port 443:" >&2
+        echo "$listener_443" >&2
+        telemt_answer="$(ask_yes_no 'Route Router Support HTTPS through Telemt SNI fallback' yes)"
+        if [ "$telemt_answer" = "yes" ]; then
+            TELEMT_INTEGRATION=1
+            TELEMT_CONFIG="$(detect_telemt_config)"
+            TELEMT_CONFIG="$(ask 'Telemt configuration file' "${TELEMT_CONFIG:-/etc/telemt/telemt.toml}")"
+            INTERNAL_HTTPS_PORT="$(ask 'Internal Apache HTTPS port behind Telemt' '8443')"
+        fi
+    elif [ -n "$listener_443" ] && [[ "$listener_443" != *apache2* ]]; then
+        echo "TCP port 443 is occupied by an unsupported service:" >&2
+        echo "$listener_443" >&2
+        echo "Automatic coexistence is currently supported for Telemt only." >&2
+        echo "The installer has not made any changes." >&2
+        exit 1
+    fi
     public_ip="$(detect_public_ipv4)"
     panel_default="$public_ip"
     [ -n "$public_ip" ] && echo "Detected public IPv4: $public_ip" >&2
@@ -147,8 +188,12 @@ interactive_setup() {
             SSH_HOST="$panel_address"
             DOMAIN="support.${panel_address//./-}.sslip.io"
             echo "Temporary public domain: $DOMAIN" >&2
-            ip_tls_answer="$(ask_yes_no "Include the IPv4 itself in a 6-day Let's Encrypt certificate" yes)"
-            [ "$ip_tls_answer" = "yes" ] && IP_CERT_ADDRESS="$panel_address"
+            if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+                echo "Telemt routing requires SNI; the sslip.io domain will be used instead of direct IP HTTPS." >&2
+            else
+                ip_tls_answer="$(ask_yes_no "Include the IPv4 itself in a 6-day Let's Encrypt certificate" yes)"
+                [ "$ip_tls_answer" = "yes" ] && IP_CERT_ADDRESS="$panel_address"
+            fi
             ;;
         *)
             DOMAIN="$panel_address"
@@ -173,6 +218,10 @@ interactive_setup() {
     echo "Configuration:" >&2
     echo "  Panel:    $DOMAIN" >&2
     echo "  SSH:      $SSH_HOST:$SSH_PORT" >&2
+    if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+        echo "  HTTPS:    Telemt :443 -> Apache 127.0.0.1:$INTERNAL_HTTPS_PORT" >&2
+        echo "  Telemt:   $TELEMT_CONFIG" >&2
+    fi
     echo "  TLS:      $([ "$ENABLE_TLS" -eq 1 ] && echo enabled || echo disabled)" >&2
     [ -z "$IP_CERT_ADDRESS" ] || echo "  IP SAN:   $IP_CERT_ADDRESS (short-lived)" >&2
     [ -z "$EMAIL" ] || echo "  Email:    $EMAIL" >&2
@@ -186,6 +235,9 @@ SSH_PORT="$(detect_ssh_port)"
 EMAIL=""
 ENABLE_TLS=1
 IP_CERT_ADDRESS=""
+TELEMT_INTEGRATION=0
+TELEMT_CONFIG=""
+INTERNAL_HTTPS_PORT="8443"
 [ "$(id -u)" -eq 0 ] || { echo "Run as root" >&2; exit 1; }
 if [ "$#" -eq 0 ]; then
     interactive_setup
@@ -195,6 +247,9 @@ while [ "$#" -gt 0 ]; do
         --domain) DOMAIN="${2:-}"; shift 2 ;;
         --ssh-host) SSH_HOST="${2:-}"; shift 2 ;;
         --ssh-port) SSH_PORT="${2:-}"; shift 2 ;;
+        --telemt-integration) TELEMT_INTEGRATION=1; shift ;;
+        --telemt-config) TELEMT_CONFIG="${2:-}"; shift 2 ;;
+        --internal-https-port) INTERNAL_HTTPS_PORT="${2:-}"; shift 2 ;;
         --email) EMAIL="${2:-}"; shift 2 ;;
         --ip-certificate) IP_CERT_ADDRESS="${2:-}"; shift 2 ;;
         --no-tls) ENABLE_TLS=0; shift ;;
@@ -206,9 +261,22 @@ case "$DOMAIN" in ''|*[!A-Za-z0-9.-]*) usage ;; esac
 case "$SSH_HOST" in ''|*[!A-Za-z0-9:.-]*) usage ;; esac
 case "$SSH_PORT" in ''|*[!0-9]*) usage ;; esac
 [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] || usage
+case "$INTERNAL_HTTPS_PORT" in ''|*[!0-9]*) usage ;; esac
+[ "$INTERNAL_HTTPS_PORT" -ge 1 ] && [ "$INTERNAL_HTTPS_PORT" -le 65535 ] || usage
 case "$IP_CERT_ADDRESS" in ''|*[!0-9.]*) [ -z "$IP_CERT_ADDRESS" ] || usage ;; esac
+[ "$TELEMT_INTEGRATION" -eq 0 ] || {
+    [ -n "$TELEMT_CONFIG" ] || TELEMT_CONFIG="$(detect_telemt_config)"
+    [ -n "$TELEMT_CONFIG" ] && [ -f "$TELEMT_CONFIG" ] || {
+        echo "Telemt configuration was not found; use --telemt-config" >&2
+        exit 2
+    }
+}
 [ "$ENABLE_TLS" -eq 1 ] || [ -z "$IP_CERT_ADDRESS" ] || {
     echo "--ip-certificate cannot be combined with --no-tls" >&2
+    exit 2
+}
+[ "$TELEMT_INTEGRATION" -eq 0 ] || [ "$ENABLE_TLS" -eq 1 ] || {
+    echo "Telemt SNI integration requires HTTPS" >&2
     exit 2
 }
 if [ -n "$IP_CERT_ADDRESS" ] && ! valid_ipv4 "$IP_CERT_ADDRESS"; then
@@ -222,7 +290,11 @@ INSTALL_ROOT="/opt/router-support"
 CONFIG_ROOT="/etc/router-support"
 
 ensure_apache_port_available 80
-ensure_apache_port_available 443
+if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+    ensure_apache_port_available "$INTERNAL_HTTPS_PORT"
+else
+    ensure_apache_port_available 443
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -230,7 +302,11 @@ apt-get install -y apache2 ca-certificates certbot curl iproute2 openssh-server 
     python3 python3-venv python3-certbot-apache
 
 ensure_apache_port_available 80
-ensure_apache_port_available 443
+if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+    ensure_apache_port_available "$INTERNAL_HTTPS_PORT"
+else
+    ensure_apache_port_available 443
+fi
 
 if ! id router-tunnel >/dev/null 2>&1; then
     useradd --system --create-home --home-dir /var/lib/router-tunnel \
@@ -285,6 +361,11 @@ if [ ! -f "$ENV_FILE" ]; then
         printf 'ROUTER_SUPPORT_PUBLIC_DOMAIN=%s\n' "$DOMAIN"
         printf 'ROUTER_SUPPORT_SESSION_SECONDS=3600\n'
         printf 'ROUTER_SUPPORT_HEARTBEAT_TIMEOUT=90\n'
+        if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+            printf 'ROUTER_SUPPORT_TELEMT_INTEGRATION=1\n'
+            printf 'ROUTER_SUPPORT_TELEMT_CONFIG=%s\n' "$TELEMT_CONFIG"
+            printf 'ROUTER_SUPPORT_INTERNAL_HTTPS_PORT=%s\n' "$INTERNAL_HTTPS_PORT"
+        fi
     } >"$ENV_FILE"
     chmod 0600 "$ENV_FILE"
 else
@@ -304,6 +385,11 @@ ensure_env_line ROUTER_SUPPORT_HEARTBEAT_TIMEOUT 90
 if [ -n "$IP_CERT_ADDRESS" ]; then
     ensure_env_line ROUTER_SUPPORT_TLS_IP "$IP_CERT_ADDRESS"
 fi
+if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+    ensure_env_line ROUTER_SUPPORT_TELEMT_INTEGRATION 1
+    ensure_env_line ROUTER_SUPPORT_TELEMT_CONFIG "$TELEMT_CONFIG"
+    ensure_env_line ROUTER_SUPPORT_INTERNAL_HTTPS_PORT "$INTERNAL_HTTPS_PORT"
+fi
 
 cp "$INSTALL_ROOT/deploy/systemd/router-support.service" \
     /etc/systemd/system/router-support.service
@@ -315,6 +401,13 @@ sed "s/SUPPORT_HOSTNAME/$DOMAIN/g" \
 if [ -n "$IP_CERT_ADDRESS" ]; then
     sed -i "/ServerName $DOMAIN/a\\    ServerAlias $IP_CERT_ADDRESS" \
         /etc/apache2/sites-available/router-support.conf
+fi
+
+if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+    [ -f /etc/apache2/ports.conf.router-support-backup ] || \
+        cp -a /etc/apache2/ports.conf /etc/apache2/ports.conf.router-support-backup
+    sed "s/SUPPORT_INTERNAL_HTTPS_PORT/$INTERNAL_HTTPS_PORT/g" \
+        "$INSTALL_ROOT/deploy/apache/ports-telemt.conf" >/etc/apache2/ports.conf
 fi
 
 a2enmod proxy proxy_http proxy_wstunnel rewrite ssl
@@ -337,6 +430,8 @@ systemctl is-active --quiet apache2 || {
 verify_local_acme_webroot
 
 if [ "$ENABLE_TLS" -eq 1 ]; then
+    MANUAL_SSL_VHOST=0
+    CERT_NAME=""
     if [ -n "$IP_CERT_ADDRESS" ]; then
         IP_CERTBOT_ROOT="/opt/router-support-certbot"
         python3 -m venv "$IP_CERTBOT_ROOT"
@@ -355,20 +450,34 @@ if [ "$ENABLE_TLS" -eq 1 ]; then
             CERTBOT_ARGS+=(--register-unsafely-without-email)
         fi
         "$IP_CERTBOT_ROOT/bin/certbot" "${CERTBOT_ARGS[@]}"
-        sed -e "s/SUPPORT_HOSTNAME/$DOMAIN/g" \
-            -e "s/SUPPORT_IP/$IP_CERT_ADDRESS/g" \
-            "$INSTALL_ROOT/deploy/apache/router-support-ip-ssl.conf" \
-            >/etc/apache2/sites-available/router-support-ip-ssl.conf
+        CERT_NAME="router-support-ip"
+        MANUAL_SSL_VHOST=1
         cp "$INSTALL_ROOT/deploy/systemd/router-support-certbot.service" \
             /etc/systemd/system/router-support-certbot.service
         cp "$INSTALL_ROOT/deploy/systemd/router-support-certbot.timer" \
             /etc/systemd/system/router-support-certbot.timer
         systemctl disable --now certbot.timer 2>/dev/null || true
-        a2ensite router-support-ip-ssl.conf
-        apache2ctl configtest
         systemctl daemon-reload
         systemctl enable --now router-support-certbot.timer
-        systemctl reload apache2
+    elif [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+        CERTBOT_ARGS=(
+            certonly --webroot --webroot-path /var/www/router-support-acme
+            --cert-name router-support-domain -d "$DOMAIN"
+            --non-interactive --agree-tos
+        )
+        if [ -n "$EMAIL" ]; then
+            CERTBOT_ARGS+=(--email "$EMAIL")
+        else
+            CERTBOT_ARGS+=(--register-unsafely-without-email)
+        fi
+        certbot "${CERTBOT_ARGS[@]}"
+        CERT_NAME="router-support-domain"
+        MANUAL_SSL_VHOST=1
+        install -d -o root -g root -m 0755 /etc/letsencrypt/renewal-hooks/deploy
+        install -o root -g root -m 0755 \
+            "$INSTALL_ROOT/deploy/certbot-reload-apache.sh" \
+            /etc/letsencrypt/renewal-hooks/deploy/router-support-apache
+        systemctl enable --now certbot.timer
     else
         CERTBOT_ARGS=(--apache -d "$DOMAIN" --non-interactive --agree-tos --redirect)
         if [ -n "$EMAIL" ]; then
@@ -377,6 +486,29 @@ if [ "$ENABLE_TLS" -eq 1 ]; then
             CERTBOT_ARGS+=(--register-unsafely-without-email)
         fi
         certbot "${CERTBOT_ARGS[@]}"
+    fi
+
+    if [ "$MANUAL_SSL_VHOST" -eq 1 ]; then
+        if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+            SSL_BIND="127.0.0.1:$INTERNAL_HTTPS_PORT"
+        else
+            SSL_BIND="*:443"
+        fi
+        sed -e "s/SUPPORT_HOSTNAME/$DOMAIN/g" \
+            -e "s/SUPPORT_IP/${IP_CERT_ADDRESS:-$DOMAIN}/g" \
+            -e "s/SUPPORT_SSL_BIND/$SSL_BIND/g" \
+            -e "s/SUPPORT_CERT_NAME/$CERT_NAME/g" \
+            "$INSTALL_ROOT/deploy/apache/router-support-ip-ssl.conf" \
+            >/etc/apache2/sites-available/router-support-ip-ssl.conf
+        a2ensite router-support-ip-ssl.conf
+        apache2ctl configtest
+        systemctl reload apache2
+    fi
+
+    if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+        ROUTER_SUPPORT_TELEMT_CONFIG="$TELEMT_CONFIG" \
+        ROUTER_SUPPORT_INTERNAL_HTTPS_PORT="$INTERNAL_HTTPS_PORT" \
+            "$INSTALL_ROOT/deploy/configure-telemt-route.sh"
     fi
 fi
 
@@ -389,7 +521,9 @@ done
 curl --fail --silent --show-error http://127.0.0.1:8000/healthz >/dev/null
 if [ "$ENABLE_TLS" -eq 1 ]; then
     echo "Router Support installed: https://$DOMAIN"
-    [ -z "$IP_CERT_ADDRESS" ] || echo "Direct IP access: https://$IP_CERT_ADDRESS"
+    if [ -n "$IP_CERT_ADDRESS" ] && [ "$TELEMT_INTEGRATION" -eq 0 ]; then
+        echo "Direct IP access: https://$IP_CERT_ADDRESS"
+    fi
 else
     echo "Router Support installed without TLS: http://$DOMAIN"
 fi
