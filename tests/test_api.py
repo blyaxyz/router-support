@@ -19,7 +19,7 @@ def settings(tmp_path: Path) -> Settings:
         ssh_host="support.example.com",
         ssh_host_key="ssh-ed25519 AAAATESTHOSTKEY",
         ssh_user="router-tunnel",
-        ssh_port=22,
+        ssh_port=2222,
         reverse_port_start=22001,
         reverse_port_end=22003,
         authorized_keys_file=tmp_path / "authorized_keys",
@@ -50,6 +50,7 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
         assert registration.status_code == 201
         result = registration.json()
         assert result["reverse_port"] == 22001
+        assert result["ssh_server_port"] == 2222
         assert result["device_token"]
         assert result["ssh_host_key"].startswith("ssh-ed25519 ")
 

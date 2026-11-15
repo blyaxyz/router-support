@@ -9,6 +9,7 @@ Usage: install-server.sh --domain support.example.com --ssh-host 203.0.113.10 [o
 Options:
   --domain DOMAIN     Public panel domain (required)
   --ssh-host HOST     Public IP/name used by OpenWrt SSH tunnels (required)
+  --ssh-port PORT     Public SSH port of the VPS (detected, otherwise 22)
   --email EMAIL       Let's Encrypt email; registration without email if omitted
   --ip-certificate IP Request a 6-day Let's Encrypt certificate for this IPv4
   --no-tls            Configure HTTP only (development only)
@@ -55,9 +56,23 @@ valid_ipv4() {
     done
 }
 
+detect_ssh_port() {
+    local candidate=""
+    if [[ "${SSH_CONNECTION:-}" =~ [[:space:]]([0-9]{1,5})$ ]]; then
+        candidate="${BASH_REMATCH[1]}"
+    elif [[ "${SSH_CLIENT:-}" =~ [[:space:]]([0-9]{1,5})$ ]]; then
+        candidate="${BASH_REMATCH[1]}"
+    fi
+    if [ -n "$candidate" ] && [ "$candidate" -ge 1 ] && [ "$candidate" -le 65535 ]; then
+        printf '%s' "$candidate"
+    else
+        printf '22'
+    fi
+}
+
 interactive_setup() {
     echo "Router Support Panel — server setup" >&2
-    echo "Ports 22, 80 and 443 must be open in the provider firewall." >&2
+    echo "Ports 80 and 443 must be open in the provider firewall." >&2
     panel_address="$(ask 'Public panel domain or VPS IPv4 (IP uses sslip.io)' '')"
     case "$panel_address" in
         [0-9]*.[0-9]*.[0-9]*.[0-9]*)
@@ -69,9 +84,10 @@ interactive_setup() {
             ;;
         *)
             DOMAIN="$panel_address"
-            SSH_HOST="$(ask 'Public SSH host/IP used by routers' "$DOMAIN")"
+            SSH_HOST="$(ask 'Public SSH host/IP of the VPS' "$DOMAIN")"
             ;;
     esac
+    SSH_PORT="$(ask 'Public SSH port of the VPS' "$SSH_PORT")"
     EMAIL="$(ask "Let's Encrypt email (optional)" "")"
     tls_answer="$(ask_yes_no "Configure HTTPS with Let's Encrypt" yes)"
     if [ "$tls_answer" != "yes" ]; then
@@ -82,7 +98,7 @@ interactive_setup() {
     echo >&2
     echo "Configuration:" >&2
     echo "  Panel:    $DOMAIN" >&2
-    echo "  SSH host: $SSH_HOST" >&2
+    echo "  SSH:      $SSH_HOST:$SSH_PORT" >&2
     echo "  TLS:      $([ "$ENABLE_TLS" -eq 1 ] && echo enabled || echo disabled)" >&2
     [ -z "$IP_CERT_ADDRESS" ] || echo "  IP SAN:   $IP_CERT_ADDRESS (short-lived)" >&2
     [ -z "$EMAIL" ] || echo "  Email:    $EMAIL" >&2
@@ -92,6 +108,7 @@ interactive_setup() {
 
 DOMAIN=""
 SSH_HOST=""
+SSH_PORT="$(detect_ssh_port)"
 EMAIL=""
 ENABLE_TLS=1
 IP_CERT_ADDRESS=""
@@ -103,6 +120,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --domain) DOMAIN="${2:-}"; shift 2 ;;
         --ssh-host) SSH_HOST="${2:-}"; shift 2 ;;
+        --ssh-port) SSH_PORT="${2:-}"; shift 2 ;;
         --email) EMAIL="${2:-}"; shift 2 ;;
         --ip-certificate) IP_CERT_ADDRESS="${2:-}"; shift 2 ;;
         --no-tls) ENABLE_TLS=0; shift ;;
@@ -112,6 +130,8 @@ done
 
 case "$DOMAIN" in ''|*[!A-Za-z0-9.-]*) usage ;; esac
 case "$SSH_HOST" in ''|*[!A-Za-z0-9:.-]*) usage ;; esac
+case "$SSH_PORT" in ''|*[!0-9]*) usage ;; esac
+[ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] || usage
 case "$IP_CERT_ADDRESS" in ''|*[!0-9.]*) [ -z "$IP_CERT_ADDRESS" ] || usage ;; esac
 [ "$ENABLE_TLS" -eq 1 ] || [ -z "$IP_CERT_ADDRESS" ] || {
     echo "--ip-certificate cannot be combined with --no-tls" >&2
@@ -175,7 +195,7 @@ if [ ! -f "$ENV_FILE" ]; then
         printf 'ROUTER_SUPPORT_SSH_HOST=%s\n' "$SSH_HOST"
         printf 'ROUTER_SUPPORT_SSH_HOST_KEY="%s"\n' "$SSH_HOST_KEY"
         printf 'ROUTER_SUPPORT_SSH_USER=router-tunnel\n'
-        printf 'ROUTER_SUPPORT_SSH_PORT=22\n'
+        printf 'ROUTER_SUPPORT_SSH_PORT=%s\n' "$SSH_PORT"
         printf 'ROUTER_SUPPORT_PORT_START=22001\n'
         printf 'ROUTER_SUPPORT_PORT_END=22999\n'
         printf 'ROUTER_SUPPORT_DB=%s/data/router-support.db\n' "$INSTALL_ROOT"
