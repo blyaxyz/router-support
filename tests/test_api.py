@@ -135,6 +135,7 @@ def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
         assert response.headers["location"] == "/login"
         assert client.get("/login").status_code == 200
         assert client.get("/app.js").status_code == 403
+        assert client.get("/api/auth/connection-token").status_code == 403
 
         rejected = client.post(
             "/api/auth/login", headers={"Authorization": "Bearer wrong"}
@@ -160,6 +161,9 @@ def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
         assert "Router Support" in response.text
         assert client.get("/app.js").status_code == 200
         assert client.get("/api/routers").status_code == 200
+        connection_token = client.get("/api/auth/connection-token")
+        assert connection_token.status_code == 200
+        assert connection_token.json() == {"token": "bootstrap-test-token"}
 
         assert client.post("/api/auth/logout").status_code == 204
         assert client.get("/api/routers").status_code == 403

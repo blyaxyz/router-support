@@ -12,7 +12,13 @@
       <p class="eyebrow">Центр управления</p>
       <h1>Router Support</h1>
     </div>
-    <button id="credentials" class="secondary">Выйти</button>
+    <div class="connection-token" aria-live="polite">
+      <span>Токен подключения OpenWrt</span>
+      <div>
+        <code id="connection-token">Загрузка…</code>
+        <button id="copy-connection-token" class="secondary" type="button" disabled>Копировать</button>
+      </div>
+    </div>
   </header>
   <main>
     <section class="summary" aria-label="Сводка">

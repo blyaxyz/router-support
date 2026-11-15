@@ -172,10 +172,31 @@ async function loadRouters() {
   }
 }
 
+async function loadConnectionToken() {
+  const tokenElement = document.querySelector('#connection-token');
+  const copyButton = document.querySelector('#copy-connection-token');
+  try {
+    const response = await fetch('/api/auth/connection-token');
+    requireAccess(response);
+    if (!response.ok) throw new Error(`Ошибка API: ${response.status}`);
+    const result = await response.json();
+    tokenElement.textContent = result.token;
+    copyButton.disabled = false;
+  } catch (error) {
+    tokenElement.textContent = 'Недоступен';
+  }
+}
+
 document.querySelector('#refresh').addEventListener('click', loadRouters);
-document.querySelector('#credentials').addEventListener('click', async () => {
-  await fetch('/api/auth/logout', { method: 'POST' });
-  location.replace('/login');
+document.querySelector('#copy-connection-token').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  try {
+    await navigator.clipboard.writeText(document.querySelector('#connection-token').textContent);
+    button.textContent = 'Скопировано';
+  } catch (error) {
+    button.textContent = 'Не удалось';
+  }
+  setTimeout(() => { button.textContent = 'Копировать'; }, 1500);
 });
 document.querySelector('#terminal-close').addEventListener('click', () => {
   if (terminalSocket) terminalSocket.close();
@@ -202,4 +223,5 @@ document.querySelector('#terminal-output').addEventListener('paste', (event) => 
   terminalSocket.send(event.clipboardData.getData('text'));
 });
 elements.search.addEventListener('input', render);
+loadConnectionToken();
 loadRouters();

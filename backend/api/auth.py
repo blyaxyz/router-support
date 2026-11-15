@@ -3,16 +3,22 @@ from __future__ import annotations
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
 from backend.auth import (
     ENGINEER_COOKIE,
     ENGINEER_COOKIE_SECONDS,
     issue_engineer_cookie,
+    require_engineer,
 )
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+@router.get("/connection-token", dependencies=[Depends(require_engineer)])
+def connection_token(request: Request) -> dict[str, str]:
+    return {"token": request.app.state.settings.bootstrap_token}
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
