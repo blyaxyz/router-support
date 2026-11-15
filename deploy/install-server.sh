@@ -824,20 +824,29 @@ else
     echo "Router Support installed without TLS: http://$DOMAIN"
 fi
 ENGINEER_TOKEN_DISPLAY="$(sed -n 's/^ROUTER_SUPPORT_ENGINEER_TOKEN=//p' "$ENV_FILE")"
+BOOTSTRAP_TOKEN_DISPLAY="$(sed -n 's/^ROUTER_SUPPORT_BOOTSTRAP_TOKEN=//p' "$ENV_FILE")"
 [ -n "$ENGINEER_TOKEN_DISPLAY" ] || {
     echo "Engineer access token is missing from $ENV_FILE" >&2
     exit 1
 }
+[ -n "$BOOTSTRAP_TOKEN_DISPLAY" ] || {
+    echo "Router connection token is missing from $ENV_FILE" >&2
+    exit 1
+}
 echo
 echo "======================================================================"
-echo "IMPORTANT: SAVE THE PANEL ACCESS TOKEN NOW"
-echo "Without this token you will not be able to sign in to the website."
+echo "IMPORTANT: SAVE BOTH TOKENS NOW"
 echo
-echo "ENGINEER ACCESS TOKEN:"
+echo "ENGINEER ACCESS TOKEN (website login):"
 echo "$ENGINEER_TOKEN_DISPLAY"
+echo
+echo "ROUTER CONNECTION TOKEN (OpenWrt registration):"
+echo "$BOOTSTRAP_TOKEN_DISPLAY"
 echo "======================================================================"
 echo
-echo "The token is also stored locally in: $ENV_FILE"
+echo "Without the engineer token you cannot sign in to the website."
+echo "Use the router connection token only when enrolling a new OpenWrt device."
+echo "Both tokens are also stored locally in: $ENV_FILE"
 echo "Only root can read this file."
 echo "After enrolling routers run: $INSTALL_ROOT/deploy/sync-service-domains.sh"
 INSTALL_COMMITTED=1

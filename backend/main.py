@@ -4,13 +4,15 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import FileResponse, RedirectResponse
 
+from backend.api.auth import router as auth_router
 from backend.api.routers import router as routers_router
 from backend.api.sessions import router as sessions_router
 from backend.api.terminal import TerminalTickets, router as terminal_router
 from backend.config import Settings
+from backend.auth import ENGINEER_COOKIE, valid_engineer_cookie
 from backend.database import Database
 from backend.proxy import SupportProxyMiddleware
 from backend.services.session_manager import SessionManager
@@ -40,11 +42,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except asyncio.CancelledError:
                 pass
 
-    app = FastAPI(title="Router Support Panel", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="Router Support Panel",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     app.state.settings = configured
     app.state.database = database
     app.state.session_manager = session_manager
     app.state.terminal_tickets = TerminalTickets()
+    app.include_router(auth_router)
     app.include_router(routers_router)
     app.include_router(sessions_router)
     app.include_router(terminal_router)
@@ -60,7 +70,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     frontend = Path(__file__).resolve().parent.parent / "frontend"
     if frontend.is_dir():
-        app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
+        @app.get("/login", include_in_schema=False)
+        def login_page():
+            return FileResponse(frontend / "login.html")
+
+        @app.get("/login.js", include_in_schema=False)
+        def login_script():
+            return FileResponse(frontend / "login.js")
+
+        def protected_file(request: Request, filename: str):
+            cookie = request.cookies.get(ENGINEER_COOKIE)
+            if not cookie:
+                if filename == "index.html":
+                    return RedirectResponse("/login", status_code=303)
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "engineer access denied")
+            if not valid_engineer_cookie(cookie, request.app.state.settings):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "engineer access denied")
+            return FileResponse(frontend / filename)
+
+        @app.get("/", include_in_schema=False)
+        def index(request: Request):
+            return protected_file(request, "index.html")
+
+        @app.get("/index.html", include_in_schema=False)
+        def index_html(request: Request):
+            return protected_file(request, "index.html")
+
+        @app.get("/app.js", include_in_schema=False)
+        def app_script(request: Request):
+            return protected_file(request, "app.js")
+
+        @app.get("/styles.css", include_in_schema=False)
+        def styles(request: Request):
+            return protected_file(request, "styles.css")
 
     return app
 

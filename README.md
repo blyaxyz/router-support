@@ -58,9 +58,9 @@ Bootstrap скачает этот репозиторий и запустит и�
 Если указать IPv4, установщик создаст служебный домен через `sslip.io` и предложит
 короткоживущий Let’s Encrypt IP-сертификат с автоматическим обновлением.
 
-В конце установки появится блок `ENGINEER ACCESS TOKEN`. Сохраните этот токен — без
-него войти в панель невозможно. Серверная копия находится в
-`/etc/router-support/backend.env` и доступна только `root`.
+В конце установки появится блок с двумя значениями: `ENGINEER ACCESS TOKEN` для входа
+в панель и `ROUTER CONNECTION TOKEN` для регистрации OpenWrt. Сохраните оба токена.
+Серверные копии находятся в `/etc/router-support/backend.env` и доступны только `root`.
 
 Для установки из уже скачанного репозитория:
 
@@ -83,7 +83,8 @@ curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstr
 ```
 
 Bootstrap скачает с GitHub только файлы минимального shell-агента, спросит HTTPS-адрес
-панели и скрыто запросит `ROUTER_SUPPORT_BOOTSTRAP_TOKEN`. Git, Python, Node.js и Docker
+панели и скрыто запросит показанный установщиком `ROUTER CONNECTION TOKEN`
+(`ROUTER_SUPPORT_BOOTSTRAP_TOKEN`). Git, Python, Node.js и Docker
 на роутер не устанавливаются. После регистрации bootstrap-токен удаляется с устройства,
 а приватный SSH-ключ никогда не покидает OpenWrt.
 

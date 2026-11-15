@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
+from backend.auth import require_engineer as _require_engineer
 from backend.authorized_keys import sync_authorized_keys
 from backend.schemas import (
     HeartbeatRequest,
@@ -28,11 +29,6 @@ def _bearer(authorization: Annotated[str | None, Header()] = None) -> str:
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(microsecond=0)
-
-
-def _require_engineer(request: Request, token: str = Depends(_bearer)) -> None:
-    if not secrets.compare_digest(token, request.app.state.settings.engineer_token):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid engineer token")
 
 
 def _all_key_rows(connection: sqlite3.Connection) -> list[dict]:

@@ -33,9 +33,10 @@ curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstr
 wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
 ```
 
-В конце установки скрипт показывает `ENGINEER ACCESS TOKEN`. Обязательно сохраните
-его: без этого токена войти в веб-панель невозможно. Копия остаётся на сервере в
-`/etc/router-support/backend.env`, доступ к файлу имеет только `root`.
+В конце установки скрипт показывает `ENGINEER ACCESS TOKEN` для входа в панель и
+`ROUTER CONNECTION TOKEN` для подключения OpenWrt. Обязательно сохраните оба значения.
+Копии остаются на сервере в `/etc/router-support/backend.env`, доступ к файлу имеет
+только `root`.
 
 Bootstrap установит Git/curl/CA, скачает `blyaxyz/router-support` и запустит quiz. В
 quiz можно указать собственный домен либо только публичный IPv4 — тогда будет

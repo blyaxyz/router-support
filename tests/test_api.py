@@ -92,7 +92,10 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
         assert heartbeat.status_code == 200
         assert heartbeat.json()["support_public_key"].startswith("ssh-ed25519 ")
 
-        assert client.get("/api/routers").status_code == 401
+        assert client.get("/api/routers").status_code == 403
+        assert client.get(
+            "/api/routers", headers={"Authorization": "Bearer wrong"}
+        ).status_code == 403
         listing = client.get(
             "/api/routers",
             headers={"Authorization": "Bearer engineer-test-token"},
@@ -122,12 +125,44 @@ def test_rejects_invalid_credentials(tmp_path: Path):
         assert response.status_code == 401
 
 
-def test_frontend_is_served(tmp_path: Path):
+def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
     (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
-    with TestClient(create_app(settings(tmp_path))) as client:
+    with TestClient(
+        create_app(settings(tmp_path)), base_url="https://testserver"
+    ) as client:
+        response = client.get("/", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/login"
+        assert client.get("/login").status_code == 200
+        assert client.get("/app.js").status_code == 403
+
+        rejected = client.post(
+            "/api/auth/login", headers={"Authorization": "Bearer wrong"}
+        )
+        assert rejected.status_code == 403
+
+        client.cookies.set("router_support_engineer", "invalid")
+        assert client.get("/", follow_redirects=False).status_code == 403
+        client.cookies.clear()
+
+        login = client.post(
+            "/api/auth/login",
+            headers={"Authorization": "Bearer engineer-test-token"},
+        )
+        assert login.status_code == 204
+        cookie = login.headers["set-cookie"].lower()
+        assert "httponly" in cookie
+        assert "secure" in cookie
+        assert "samesite=strict" in cookie
+
         response = client.get("/")
         assert response.status_code == 200
         assert "Router Support" in response.text
+        assert client.get("/app.js").status_code == 200
+        assert client.get("/api/routers").status_code == 200
+
+        assert client.post("/api/auth/logout").status_code == 204
+        assert client.get("/api/routers").status_code == 403
 
 
 def test_rename_and_terminal_ticket_require_engineer_token(tmp_path: Path, monkeypatch):
@@ -146,7 +181,7 @@ def test_rename_and_terminal_ticket_require_engineer_token(tmp_path: Path, monke
     )
     headers = {"Authorization": "Bearer engineer-test-token"}
     with TestClient(app) as client:
-        assert client.patch(f"/api/routers/{UUID}", json={"hostname": "edge-01"}).status_code == 401
+        assert client.patch(f"/api/routers/{UUID}", json={"hostname": "edge-01"}).status_code == 403
         renamed_response = client.patch(
             f"/api/routers/{UUID}", headers=headers, json={"hostname": "edge-01"}
         )

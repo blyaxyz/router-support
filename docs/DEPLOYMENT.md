@@ -148,9 +148,10 @@ curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstr
 wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
 ```
 
-После успешного развёртывания установщик выводит инженерный токен доступа крупным
-блоком. Его необходимо сохранить: панель запрашивает этот токен при входе. Серверная
-копия хранится в `/etc/router-support/backend.env` с правами только для `root`.
+После успешного развёртывания установщик выводит крупным блоком два токена:
+`ENGINEER ACCESS TOKEN` для входа в панель и `ROUTER CONNECTION TOKEN` для подключения
+новых OpenWrt-устройств. Их необходимо сохранить. Серверные копии хранятся в
+`/etc/router-support/backend.env` с правами только для `root`.
 
 Он установит `git`, `curl` и CA-сертификаты, клонирует официальный репозиторий во
 временный каталог и запустит серверный quiz. Для форка или другой ветки URL и ref

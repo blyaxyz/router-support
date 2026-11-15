@@ -10,13 +10,12 @@ const elements = {
   template: document.querySelector('#router-card'),
 };
 
-function accessToken() {
-  let token = sessionStorage.getItem('engineerToken');
-  if (!token) {
-    token = window.prompt('Введите инженерный токен') || '';
-    if (token) sessionStorage.setItem('engineerToken', token);
+function requireAccess(response) {
+  if (response.status === 403) {
+    location.replace('/login');
+    throw new Error('Доступ запрещён');
   }
-  return token;
+  return response;
 }
 
 function relativeTime(value) {
@@ -86,11 +85,11 @@ async function renameRouter(router) {
     const response = await fetch(`/api/routers/${router.uuid}`, {
       method: 'PATCH',
       headers: {
-        Authorization: `Bearer ${accessToken()}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ hostname }),
     });
+    requireAccess(response);
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || `Ошибка переименования: ${response.status}`);
     router.name = result.hostname;
@@ -115,8 +114,9 @@ async function openTerminal(router) {
   dialog.showModal();
   try {
     const response = await fetch(`/api/routers/${router.uuid}/terminal/ticket`, {
-      method: 'POST', headers: { Authorization: `Bearer ${accessToken()}` },
+      method: 'POST',
     });
+    requireAccess(response);
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || `Ошибка SSH: ${response.status}`);
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -139,15 +139,15 @@ async function toggleSupport(uuid, button) {
     if (session) {
       const response = await fetch(`/api/sessions/${session.id}/stop`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken()}` },
       });
+      requireAccess(response);
       if (!response.ok) throw new Error(`Не удалось завершить сессию: ${response.status}`);
       state.sessions.delete(uuid);
     } else {
       const response = await fetch(`/api/routers/${uuid}/support/start`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken()}` },
       });
+      requireAccess(response);
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || `Ошибка запуска: ${response.status}`);
       state.sessions.set(uuid, result);
@@ -162,13 +162,8 @@ async function toggleSupport(uuid, button) {
 async function loadRouters() {
   elements.message.textContent = 'Загрузка…';
   try {
-    const response = await fetch('/api/routers', {
-      headers: { Authorization: `Bearer ${accessToken()}` },
-    });
-    if (response.status === 401) {
-      sessionStorage.removeItem('engineerToken');
-      throw new Error('Неверный инженерный токен');
-    }
+    const response = await fetch('/api/routers');
+    requireAccess(response);
     if (!response.ok) throw new Error(`Ошибка API: ${response.status}`);
     state.routers = await response.json();
     render();
@@ -178,9 +173,9 @@ async function loadRouters() {
 }
 
 document.querySelector('#refresh').addEventListener('click', loadRouters);
-document.querySelector('#credentials').addEventListener('click', () => {
-  sessionStorage.removeItem('engineerToken');
-  loadRouters();
+document.querySelector('#credentials').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  location.replace('/login');
 });
 document.querySelector('#terminal-close').addEventListener('click', () => {
   if (terminalSocket) terminalSocket.close();
