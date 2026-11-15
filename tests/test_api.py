@@ -133,7 +133,10 @@ def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
         response = client.get("/", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == "/login"
-        assert client.get("/login").status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        login_page = client.get("/login")
+        assert login_page.status_code == 200
+        assert login_page.headers["cache-control"] == "no-store"
         assert client.get("/app.js").status_code == 403
         assert client.get("/api/auth/connection-token").status_code == 403
 
@@ -143,7 +146,10 @@ def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
         assert rejected.status_code == 403
 
         client.cookies.set("router_support_engineer", "invalid")
-        assert client.get("/", follow_redirects=False).status_code == 403
+        stale_cookie = client.get("/", follow_redirects=False)
+        assert stale_cookie.status_code == 303
+        assert stale_cookie.headers["location"] == "/login"
+        assert "router_support_engineer=\"\"" in stale_cookie.headers["set-cookie"]
         client.cookies.clear()
 
         login = client.post(
@@ -158,6 +164,7 @@ def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
 
         response = client.get("/")
         assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
         assert "Router Support" in response.text
         assert client.get("/app.js").status_code == 200
         assert client.get("/api/routers").status_code == 200

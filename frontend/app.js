@@ -11,7 +11,7 @@ const elements = {
 };
 
 function requireAccess(response) {
-  if (response.status === 403) {
+  if (response.status === 401 || response.status === 403) {
     location.replace('/login');
     throw new Error('Доступ запрещён');
   }

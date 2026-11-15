@@ -72,21 +72,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if frontend.is_dir():
         @app.get("/login", include_in_schema=False)
         def login_page():
-            return FileResponse(frontend / "login.html")
+            return FileResponse(
+                frontend / "login.html", headers={"Cache-Control": "no-store"}
+            )
 
         @app.get("/login.js", include_in_schema=False)
         def login_script():
-            return FileResponse(frontend / "login.js")
+            return FileResponse(
+                frontend / "login.js", headers={"Cache-Control": "no-store"}
+            )
+
+        def redirect_to_login():
+            response = RedirectResponse("/login", status_code=303)
+            response.headers["Cache-Control"] = "no-store"
+            response.delete_cookie(
+                ENGINEER_COOKIE,
+                httponly=True,
+                secure=True,
+                samesite="strict",
+                path="/",
+            )
+            return response
 
         def protected_file(request: Request, filename: str):
             cookie = request.cookies.get(ENGINEER_COOKIE)
             if not cookie:
                 if filename == "index.html":
-                    return RedirectResponse("/login", status_code=303)
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "engineer access denied")
+                    return redirect_to_login()
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "engineer access denied",
+                    headers={"Cache-Control": "no-store"},
+                )
             if not valid_engineer_cookie(cookie, request.app.state.settings):
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "engineer access denied")
-            return FileResponse(frontend / filename)
+                if filename == "index.html":
+                    return redirect_to_login()
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "engineer access denied",
+                    headers={"Cache-Control": "no-store"},
+                )
+            return FileResponse(
+                frontend / filename, headers={"Cache-Control": "no-store"}
+            )
 
         @app.get("/", include_in_schema=False)
         def index(request: Request):

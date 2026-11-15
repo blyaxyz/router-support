@@ -17,7 +17,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.get("/connection-token", dependencies=[Depends(require_engineer)])
-def connection_token(request: Request) -> dict[str, str]:
+def connection_token(request: Request, response: Response) -> dict[str, str]:
+    response.headers["Cache-Control"] = "no-store"
     return {"token": request.app.state.settings.bootstrap_token}
 
 
@@ -31,9 +32,14 @@ def login(
     if authorization and authorization.startswith("Bearer "):
         supplied = authorization.removeprefix("Bearer ").strip()
     if not supplied or not secrets.compare_digest(supplied, expected):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid engineer token")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "invalid engineer token",
+            headers={"Cache-Control": "no-store"},
+        )
 
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.headers["Cache-Control"] = "no-store"
     response.set_cookie(
         ENGINEER_COOKIE,
         issue_engineer_cookie(request.app.state.settings),
@@ -49,6 +55,7 @@ def login(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout() -> Response:
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.headers["Cache-Control"] = "no-store"
     response.delete_cookie(
         ENGINEER_COOKIE,
         httponly=True,
