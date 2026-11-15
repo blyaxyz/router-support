@@ -17,24 +17,28 @@ support.example.com    -> 203.0.113.10
 На чистом Debian 12/13:
 
 ```sh
-sudo ./bootstrap-server.sh
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+```
+
+Либо через `wget`:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
 ```
 
 В конце установки скрипт показывает `ENGINEER ACCESS TOKEN`. Обязательно сохраните
 его: без этого токена войти в веб-панель невозможно. Копия остаётся на сервере в
 `/etc/router-support/backend.env`, доступ к файлу имеет только `root`.
 
-Bootstrap спросит GitHub URL и ветку, установит Git/curl/CA, скачает проект и запустит
-quiz. В quiz можно указать собственный домен либо только публичный IPv4 — тогда будет
+Bootstrap установит Git/curl/CA, скачает `blyaxyz/router-support` и запустит quiz. В
+quiz можно указать собственный домен либо только публичный IPv4 — тогда будет
 выпущен короткоживущий Let’s Encrypt сертификат непосредственно на IP и автоматически
 сформирован домен `support.<IP>.sslip.io` для сервисных поддоменов.
 
-Пока репозиторий не опубликован, можно использовать release-архив:
-
-Загрузите release-архив на Debian 12/13, распакуйте и выполните от root:
+Для установки из локальной копии репозитория выполните от root:
 
 ```sh
-./deploy/install-server.sh
+sudo ./deploy/install-server.sh
 ```
 
 Quiz установит Apache, OpenSSH, Python venv, Certbot, зависимости backend, создаст

@@ -84,24 +84,30 @@ systemctl status router-support-certbot.timer
 
 ## Установка напрямую из GitHub
 
-После публикации репозитория достаточно загрузить один bootstrap-скрипт:
+Для установки достаточно загрузить один bootstrap-скрипт из репозитория:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ORG/REPO/main/bootstrap-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+```
+
+Альтернатива через `wget`:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
 ```
 
 После успешного развёртывания установщик выводит инженерный токен доступа крупным
 блоком. Его необходимо сохранить: панель запрашивает этот токен при входе. Серверная
 копия хранится в `/etc/router-support/backend.env` с правами только для `root`.
 
-Он спросит GitHub URL/ветку, установит `git`, `curl` и CA-сертификаты, клонирует проект
-во временный каталог и запустит серверный quiz. Для автоматизации URL и ref можно
-передать окружением:
+Он установит `git`, `curl` и CA-сертификаты, клонирует официальный репозиторий во
+временный каталог и запустит серверный quiz. Для форка или другой ветки URL и ref
+можно переопределить окружением:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ORG/REPO/main/bootstrap-server.sh | \
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | \
   sudo env \
-    ROUTER_SUPPORT_REPO_URL=https://github.com/ORG/REPO.git \
+    ROUTER_SUPPORT_REPO_URL=https://github.com/blyaxyz/router-support.git \
     ROUTER_SUPPORT_REPO_REF=main \
     bash
 ```
