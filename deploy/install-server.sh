@@ -104,6 +104,36 @@ detect_ssh_port() {
     fi
 }
 
+ensure_apache_port_available() {
+    local port="$1" listeners
+    command -v ss >/dev/null 2>&1 || return 0
+    listeners="$(ss -H -ltnp "sport = :$port" 2>/dev/null || true)"
+    if [ -n "$listeners" ] && ! grep -q 'apache2' <<<"$listeners"; then
+        echo "TCP port $port is already occupied by another service:" >&2
+        echo "$listeners" >&2
+        echo "Stop or reconfigure that service before installing Router Support." >&2
+        exit 1
+    fi
+}
+
+verify_local_acme_webroot() {
+    local probe_name="router-support-preflight-$$" probe_file response
+    probe_file="/var/www/router-support-acme/.well-known/acme-challenge/$probe_name"
+    printf 'router-support-ok' >"$probe_file"
+    if ! response="$(curl -fsS -H "Host: $DOMAIN" \
+        "http://127.0.0.1/.well-known/acme-challenge/$probe_name")"; then
+        rm -f "$probe_file"
+        echo "Apache cannot serve the local ACME challenge path." >&2
+        echo "Check: apache2ctl configtest && journalctl -u apache2 -n 100" >&2
+        exit 1
+    fi
+    rm -f "$probe_file"
+    if [ "$response" != "router-support-ok" ]; then
+        echo "Unexpected response from the local ACME challenge path." >&2
+        exit 1
+    fi
+}
+
 interactive_setup() {
     local public_ip panel_default email_answer
     echo "Router Support Panel — server setup" >&2
@@ -191,10 +221,16 @@ PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)"
 INSTALL_ROOT="/opt/router-support"
 CONFIG_ROOT="/etc/router-support"
 
+ensure_apache_port_available 80
+ensure_apache_port_available 443
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y apache2 ca-certificates certbot curl openssh-server \
+apt-get install -y apache2 ca-certificates certbot curl iproute2 openssh-server \
     python3 python3-venv python3-certbot-apache
+
+ensure_apache_port_available 80
+ensure_apache_port_available 443
 
 if ! id router-tunnel >/dev/null 2>&1; then
     useradd --system --create-home --home-dir /var/lib/router-tunnel \
@@ -288,7 +324,17 @@ apache2ctl configtest
 systemctl daemon-reload
 systemctl enable --now router-support.service
 systemctl reload ssh
-systemctl reload apache2
+if ! systemctl restart apache2; then
+    systemctl status apache2 --no-pager >&2 || true
+    journalctl -u apache2 -n 50 --no-pager >&2 || true
+    echo "Apache failed to start. Resolve the error above, then rerun the installer." >&2
+    exit 1
+fi
+systemctl is-active --quiet apache2 || {
+    echo "Apache is not active after restart" >&2
+    exit 1
+}
+verify_local_acme_webroot
 
 if [ "$ENABLE_TLS" -eq 1 ]; then
     if [ -n "$IP_CERT_ADDRESS" ]; then
