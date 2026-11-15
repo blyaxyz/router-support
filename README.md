@@ -178,5 +178,6 @@ uvicorn --env-file .env backend.main:app --host 127.0.0.1 --port 8000
 - [Полное развёртывание](docs/DEPLOYMENT.md)
 - [Настройки](docs/CONFIGURATION.md)
 - [Эксплуатация и диагностика](docs/OPERATIONS.md)
+- [Установка в WSL 2](docs/WSL.md)
 
 Лицензия: [MIT](LICENSE).

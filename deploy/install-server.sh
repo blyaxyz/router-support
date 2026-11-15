@@ -13,6 +13,7 @@ Options:
   --telemt-integration Route panel TLS through Telemt SNI fallback on port 443
   --telemt-config FILE Telemt TOML file (default: auto-detect)
   --internal-https-port PORT  Apache TLS upstream for Telemt (default: 8443)
+  --allow-wsl         Confirm Windows firewall/port forwarding is configured
   --email EMAIL       Let's Encrypt email; registration without email if omitted
   --ip-certificate IP Request a 6-day Let's Encrypt certificate for this IPv4
   --no-tls            Configure HTTP only (development only)
@@ -105,6 +106,28 @@ detect_ssh_port() {
         printf '%s' "$candidate"
     else
         printf '22'
+    fi
+}
+
+is_wsl() {
+    grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || \
+        grep -qi microsoft /proc/version 2>/dev/null
+}
+
+require_wsl_systemd() {
+    local init_name
+    init_name="$(ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]')"
+    if [ "$init_name" != "systemd" ]; then
+        cat >&2 <<'EOF'
+WSL detected, but systemd is not PID 1.
+Add this to /etc/wsl.conf:
+
+[boot]
+systemd=true
+
+Then run `wsl.exe --shutdown` from Windows PowerShell and start WSL again.
+EOF
+        exit 1
     fi
 }
 
@@ -212,12 +235,16 @@ capture_initial_state() {
     CERTBOT_TIMER_WAS_ENABLED=0
     SUPPORT_CERTBOT_TIMER_WAS_ACTIVE=0
     SUPPORT_CERTBOT_TIMER_WAS_ENABLED=0
+    SSH_WAS_ACTIVE=0
+    SSH_WAS_ENABLED=0
     unit_is_active apache2.service && APACHE_WAS_ACTIVE=1
     unit_is_active router-support.service && ROUTER_SUPPORT_WAS_ACTIVE=1
     unit_is_active certbot.timer && CERTBOT_TIMER_WAS_ACTIVE=1
     unit_is_enabled certbot.timer && CERTBOT_TIMER_WAS_ENABLED=1
     unit_is_active router-support-certbot.timer && SUPPORT_CERTBOT_TIMER_WAS_ACTIVE=1
     unit_is_enabled router-support-certbot.timer && SUPPORT_CERTBOT_TIMER_WAS_ENABLED=1
+    unit_is_active ssh.service && SSH_WAS_ACTIVE=1
+    unit_is_enabled ssh.service && SSH_WAS_ENABLED=1
     return 0
 }
 
@@ -240,6 +267,7 @@ begin_install_transaction() {
         /etc/apache2/sites-enabled/router-support-ip-ssl.conf \
         /etc/apache2/sites-enabled/router-support-le-ssl.conf \
         /etc/ssh/sshd_config.d/router-support.conf \
+        /etc/tmpfiles.d/router-support-sshd.conf \
         /etc/systemd/system/router-support.service \
         /etc/systemd/system/router-support-certbot.service \
         /etc/systemd/system/router-support-certbot.timer \
@@ -274,12 +302,13 @@ rollback_install() {
         "$CERTBOT_TIMER_WAS_ENABLED" "$CERTBOT_TIMER_WAS_ACTIVE"
     restore_unit_state router-support-certbot.timer \
         "$SUPPORT_CERTBOT_TIMER_WAS_ENABLED" "$SUPPORT_CERTBOT_TIMER_WAS_ACTIVE"
+    restore_unit_state ssh.service "$SSH_WAS_ENABLED" "$SSH_WAS_ACTIVE"
     if [ "$ROUTER_SUPPORT_WAS_ACTIVE" -eq 1 ]; then
         systemctl restart router-support.service >/dev/null 2>&1 || true
     else
         systemctl stop router-support.service >/dev/null 2>&1 || true
     fi
-    if sshd -t >/dev/null 2>&1; then
+    if [ "$SSH_WAS_ACTIVE" -eq 1 ] && sshd -t >/dev/null 2>&1; then
         systemctl reload ssh >/dev/null 2>&1 || true
     fi
     if [ "$APACHE_WAS_ACTIVE" -eq 1 ]; then
@@ -311,8 +340,18 @@ interrupt_install() {
 }
 
 interactive_setup() {
-    local public_ip panel_default email_answer listener_80 listener_443 telemt_answer
+    local public_ip panel_default email_answer listener_80 listener_443 telemt_answer wsl_answer
     echo "Router Support Panel — server setup" >&2
+    if [ "$WSL_MODE" -eq 1 ]; then
+        echo "WSL detected. Public installation requires Windows forwarding/firewall for TCP 80, 443 and SSH." >&2
+        echo "WSL systemd services do not by themselves keep the WSL VM running." >&2
+        wsl_answer="$(ask_yes_no 'Windows networking and automatic WSL startup are configured' no)"
+        [ "$wsl_answer" = "yes" ] || {
+            echo "Installation cancelled before any changes. See docs/WSL.md." >&2
+            exit 0
+        }
+        ALLOW_WSL=1
+    fi
     echo "Ports 80 and 443 must be open in the provider firewall." >&2
     listener_80="$(port_listeners 80)"
     listener_443="$(port_listeners 443)"
@@ -398,7 +437,13 @@ IP_CERT_ADDRESS=""
 TELEMT_INTEGRATION=0
 TELEMT_CONFIG=""
 INTERNAL_HTTPS_PORT="8443"
+ALLOW_WSL=0
+WSL_MODE=0
 [ "$(id -u)" -eq 0 ] || { echo "Run as root" >&2; exit 1; }
+if is_wsl; then
+    WSL_MODE=1
+    require_wsl_systemd
+fi
 if [ "$#" -eq 0 ]; then
     interactive_setup
 fi
@@ -410,12 +455,18 @@ while [ "$#" -gt 0 ]; do
         --telemt-integration) TELEMT_INTEGRATION=1; shift ;;
         --telemt-config) TELEMT_CONFIG="${2:-}"; shift 2 ;;
         --internal-https-port) INTERNAL_HTTPS_PORT="${2:-}"; shift 2 ;;
+        --allow-wsl) ALLOW_WSL=1; shift ;;
         --email) EMAIL="${2:-}"; shift 2 ;;
         --ip-certificate) IP_CERT_ADDRESS="${2:-}"; shift 2 ;;
         --no-tls) ENABLE_TLS=0; shift ;;
         *) usage ;;
     esac
 done
+
+if [ "$WSL_MODE" -eq 1 ] && [ "$ALLOW_WSL" -ne 1 ]; then
+    echo "WSL requires --allow-wsl after Windows port forwarding/firewall is configured" >&2
+    exit 2
+fi
 
 case "$DOMAIN" in ''|*[!A-Za-z0-9.-]*) usage ;; esac
 case "$SSH_HOST" in ''|*[!A-Za-z0-9:.-]*) usage ;; esac
@@ -562,6 +613,11 @@ cp "$INSTALL_ROOT/deploy/systemd/router-support.service" \
     /etc/systemd/system/router-support.service
 cp "$INSTALL_ROOT/deploy/sshd/router-support.conf" \
     /etc/ssh/sshd_config.d/router-support.conf
+install -d -o root -g root -m 0755 /etc/tmpfiles.d
+cp "$INSTALL_ROOT/deploy/systemd/router-support-sshd-tmpfiles.conf" \
+    /etc/tmpfiles.d/router-support-sshd.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/router-support-sshd.conf
+install -d -o root -g root -m 0755 /run/sshd
 sed "s/SUPPORT_HOSTNAME/$DOMAIN/g" \
     "$INSTALL_ROOT/deploy/apache/router-support.conf" \
     >/etc/apache2/sites-available/router-support.conf
@@ -583,7 +639,7 @@ sshd -t
 apache2ctl configtest
 systemctl daemon-reload
 systemctl enable --now router-support.service
-systemctl reload ssh
+systemctl enable --now ssh.service
 if ! systemctl restart apache2; then
     systemctl status apache2 --no-pager >&2 || true
     journalctl -u apache2 -n 50 --no-pager >&2 || true

@@ -8,6 +8,14 @@ DEFAULT_REPO_REF="${ROUTER_SUPPORT_REPO_REF:-main}"
     echo "Run as root, for example: curl -fsSL URL | sudo bash" >&2
     exit 1
 }
+if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+    init_name="$(ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]')"
+    if [ "$init_name" != "systemd" ]; then
+        echo "WSL requires systemd. Add [boot] systemd=true to /etc/wsl.conf," >&2
+        echo "run 'wsl.exe --shutdown' in PowerShell, then retry." >&2
+        exit 1
+    fi
+fi
 
 echo "Router Support Panel — bootstrap installer" >&2
 REPO_URL="$DEFAULT_REPO_URL"
