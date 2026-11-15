@@ -144,7 +144,7 @@ install -d -o www-data -g www-data -m 0755 \
 if [ "$PROJECT_ROOT" != "$INSTALL_ROOT" ]; then
     for item in backend frontend openwrt-agent deploy scripts docs \
         requirements.txt requirements-dev.txt pyproject.toml README.md .env.example \
-        bootstrap-server.sh; do
+        bootstrap-server.sh bootstrap-openwrt.sh; do
         cp -a "$PROJECT_ROOT/$item" "$INSTALL_ROOT/"
     done
 fi

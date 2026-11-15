@@ -10,13 +10,13 @@ usage() {
 
 prompt_secret() {
     prompt="$1"
-    if [ -t 0 ] && command -v stty >/dev/null 2>&1; then
-        terminal_state="$(stty -g)"
+    if [ -t 2 ] && [ -r /dev/tty ] && command -v stty >/dev/null 2>&1; then
+        terminal_state="$(stty -g </dev/tty)"
         printf '%s' "$prompt" >&2
-        trap 'stty "$terminal_state"' 0 1 2 15
-        stty -echo
-        IFS= read -r secret_value
-        stty "$terminal_state"
+        trap 'stty "$terminal_state" </dev/tty' 0 1 2 15
+        stty -echo </dev/tty
+        IFS= read -r secret_value </dev/tty
+        stty "$terminal_state" </dev/tty
         trap - 0 1 2 15
         printf '\n' >&2
     else
@@ -29,7 +29,11 @@ prompt_secret() {
 [ "$#" -le 2 ] || usage
 if [ "$#" -eq 0 ]; then
     printf 'Router Support HTTPS address (domain or IP): ' >&2
-    IFS= read -r server_input
+    if [ -t 2 ] && [ -r /dev/tty ]; then
+        IFS= read -r server_input </dev/tty
+    else
+        IFS= read -r server_input
+    fi
     case "$server_input" in
         https://*) SERVER_URL="${server_input%/}" ;;
         http://*) echo "Only HTTPS is allowed" >&2; exit 2 ;;

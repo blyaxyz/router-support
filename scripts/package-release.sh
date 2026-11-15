@@ -10,6 +10,6 @@ COPYFILE_DISABLE=1 tar -czf "$OUTPUT" \
     -C "$PROJECT_ROOT" \
     backend frontend openwrt-agent deploy scripts docs \
     requirements.txt requirements-dev.txt pyproject.toml README.md .env.example \
-    bootstrap-server.sh
+    bootstrap-server.sh bootstrap-openwrt.sh
 echo "$OUTPUT"
 

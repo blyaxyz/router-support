@@ -51,19 +51,23 @@ grep '^ROUTER_SUPPORT_ENGINEER_TOKEN=' /etc/router-support/backend.env
 grep '^ROUTER_SUPPORT_BOOTSTRAP_TOKEN=' /etc/router-support/backend.env
 ```
 
-## 3. Установите агент
+## 3. Установите агент одной командой на OpenWrt
 
-С рабочей станции:
+Через `wget`:
 
 ```sh
-./scripts/deploy-router-agent.sh root@192.168.1.1 https://support.example.com
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
 ```
 
-Токен вводится скрыто и не передаётся в аргументах удалённых процессов. После
-регистрации агент удаляет общий bootstrap-token с роутера.
+Или через `curl`:
 
-При ручной установке можно запустить `./openwrt-agent/install.sh` без аргументов:
-скрипт сам спросит HTTPS-адрес панели и скрыто запросит bootstrap-token.
+```sh
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
+```
+
+Скрипт спросит HTTPS-адрес панели и скрыто запросит bootstrap-token. Токен не передаётся
+в аргументах процессов и после регистрации удаляется с роутера. Скачиваются только
+небольшие shell-файлы агента; Git и другие тяжёлые зависимости не устанавливаются.
 
 ## 4. Выпустите сертификаты сервисов
 

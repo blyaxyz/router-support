@@ -148,21 +148,29 @@ Backend работает как непривилегированный поль�
 
 ## Добавление роутера
 
-С рабочей станции:
+Непосредственно на OpenWrt через `wget`:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
+```
+
+Или через `curl`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
+```
+
+Bootstrap скачивает только shell-файлы агента и запускает интерактивную установку через
+`/dev/tty`, поэтому команды с pipe корректно спрашивают HTTPS-адрес панели и скрытый
+bootstrap-token. Если вводится IP вместо домена, TLS-сертификат обязан содержать этот
+IP; обычно следует вводить домен панели, а публичный SSH IP агент получит в ответе
+сервера.
+
+Установка с рабочей станции также поддерживается:
 
 ```sh
 ./scripts/deploy-router-agent.sh root@192.168.1.1 https://support.example.com
 ```
-
-Либо скопируйте `openwrt-agent` вручную и выполните на роутере:
-
-```sh
-./install.sh
-```
-
-Интерактивный установщик спросит HTTPS-адрес панели и bootstrap-token. Если вводится
-IP вместо домена, TLS-сертификат обязан содержать этот IP; обычно следует вводить домен
-панели, а публичный SSH IP агент получит в ответе сервера.
 
 Во время handshake агент создаёт UUID и индивидуальный SSH-ключ, отправляет публичную
 часть по HTTPS, а сервер после проверки bootstrap-token назначает reverse-порт и сразу

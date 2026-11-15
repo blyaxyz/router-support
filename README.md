@@ -55,17 +55,22 @@ sudo ./deploy/install-server.sh
 
 ## Подключение OpenWrt
 
-На рабочем компьютере клонируйте репозиторий и запустите:
+На самом роутере выполните одну команду через `wget`:
 
 ```sh
-git clone https://github.com/blyaxyz/router-support.git
-cd router-support
-./scripts/deploy-router-agent.sh root@192.168.1.1 https://support.example.com
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
 ```
 
-Скрипт скрыто запросит `ROUTER_SUPPORT_BOOTSTRAP_TOKEN`, скопирует минимальный shell-агент
-и зарегистрирует роутер. Bootstrap-токен после регистрации удаляется с устройства.
-Приватный SSH-ключ никогда не покидает OpenWrt.
+Или через `curl`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
+```
+
+Bootstrap скачает с GitHub только файлы минимального shell-агента, спросит HTTPS-адрес
+панели и скрыто запросит `ROUTER_SUPPORT_BOOTSTRAP_TOKEN`. Git, Python, Node.js и Docker
+на роутер не устанавливаются. После регистрации bootstrap-токен удаляется с устройства,
+а приватный SSH-ключ никогда не покидает OpenWrt.
 
 Bootstrap-токен можно посмотреть на VPS:
 
@@ -73,10 +78,10 @@ Bootstrap-токен можно посмотреть на VPS:
 sudo grep '^ROUTER_SUPPORT_BOOTSTRAP_TOKEN=' /etc/router-support/backend.env
 ```
 
-Для ручной установки скопируйте каталог `openwrt-agent` на роутер и выполните:
+Альтернативный запуск с рабочей станции остаётся доступен:
 
 ```sh
-./openwrt-agent/install.sh
+./scripts/deploy-router-agent.sh root@192.168.1.1 https://support.example.com
 ```
 
 После добавления роутеров синхронизируйте TLS-имена сервисов на VPS:
