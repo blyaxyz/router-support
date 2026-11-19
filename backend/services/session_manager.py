@@ -17,7 +17,8 @@ from fastapi import HTTPException
 from backend.schemas import SupportSessionResponse
 from backend.security import token_digest
 
-logger = logging.getLogger(__name__)
+# Reuse Uvicorn's configured logger so INFO diagnostics reach journald too.
+logger = logging.getLogger("uvicorn.error")
 
 
 class SessionManager:
