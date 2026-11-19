@@ -47,7 +47,7 @@ def external_client_ip(scope) -> IPv4Address | None:
 class PanelAccessMiddleware:
     def __init__(self, app, settings):
         self.app = app
-        self.allowed_network = settings.panel_allowed_network
+        self.allowed_networks = settings.panel_allowed_networks
 
     async def __call__(self, scope, receive, send):
         if scope["type"] not in {"http", "websocket"}:
@@ -58,7 +58,9 @@ class PanelAccessMiddleware:
             await self.app(scope, receive, send)
             return
         client_ip = external_client_ip(scope)
-        if client_ip is not None and client_ip in self.allowed_network:
+        if client_ip is not None and any(
+            client_ip in network for network in self.allowed_networks
+        ):
             await self.app(scope, receive, send)
             return
         if scope["type"] == "websocket":

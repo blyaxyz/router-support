@@ -13,19 +13,26 @@ def _required(name: str) -> str:
     return value
 
 
-def _panel_network() -> IPv4Network:
+def _panel_networks() -> tuple[IPv4Network, ...]:
     value = os.getenv("ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK", "0.0.0.0/0").strip()
     aliases = {
         "0.0.0.0": "0.0.0.0/0",
         "127.0.0.1": "127.0.0.1/32",
+        "local": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+        "private": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
     }
-    try:
-        network = ip_network(aliases.get(value, value), strict=False)
-    except ValueError as error:
-        raise RuntimeError("invalid ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK") from error
-    if not isinstance(network, IPv4Network):
-        raise RuntimeError("ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK must be IPv4")
-    return network
+    networks: list[IPv4Network] = []
+    for item in aliases.get(value, value).split(","):
+        try:
+            network = ip_network(item.strip(), strict=False)
+        except ValueError as error:
+            raise RuntimeError("invalid ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK") from error
+        if not isinstance(network, IPv4Network):
+            raise RuntimeError("ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK must be IPv4")
+        networks.append(network)
+    if not networks:
+        raise RuntimeError("ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK is empty")
+    return tuple(networks)
 
 
 @dataclass(frozen=True)
@@ -46,7 +53,7 @@ class Settings:
     public_base_domain: str
     support_session_seconds: int
     heartbeat_timeout_seconds: int
-    panel_allowed_network: IPv4Network
+    panel_allowed_networks: tuple[IPv4Network, ...]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -81,6 +88,6 @@ class Settings:
             heartbeat_timeout_seconds=int(
                 os.getenv("ROUTER_SUPPORT_HEARTBEAT_TIMEOUT", "90")
             ),
-            panel_allowed_network=_panel_network(),
+            panel_allowed_networks=_panel_networks(),
         )
 

@@ -31,7 +31,7 @@ def settings(tmp_path: Path) -> Settings:
         public_base_domain="support.example.test",
         support_session_seconds=3600,
         heartbeat_timeout_seconds=90,
-        panel_allowed_network=IPv4Network("0.0.0.0/0"),
+        panel_allowed_networks=(IPv4Network("0.0.0.0/0"),),
     )
 
 
@@ -264,7 +264,12 @@ def test_login_block_expires_after_five_minutes():
 def test_panel_access_is_limited_by_forwarded_client_ip(tmp_path: Path):
     (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
     restricted = replace(
-        settings(tmp_path), panel_allowed_network=IPv4Network("192.168.1.0/24")
+        settings(tmp_path),
+        panel_allowed_networks=(
+            IPv4Network("10.0.0.0/8"),
+            IPv4Network("172.16.0.0/12"),
+            IPv4Network("192.168.0.0/16"),
+        ),
     )
     with TestClient(
         create_app(restricted),
@@ -273,6 +278,12 @@ def test_panel_access_is_limited_by_forwarded_client_ip(tmp_path: Path):
     ) as client:
         assert client.get(
             "/login", headers={"X-Forwarded-For": "192.168.1.44"}
+        ).status_code == 200
+        assert client.get(
+            "/login", headers={"X-Forwarded-For": "10.23.45.67"}
+        ).status_code == 200
+        assert client.get(
+            "/login", headers={"X-Forwarded-For": "172.31.255.254"}
         ).status_code == 200
         assert client.get(
             "/login", headers={"X-Forwarded-For": "203.0.113.20"}

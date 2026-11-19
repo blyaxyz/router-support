@@ -10,7 +10,7 @@ Options:
   --domain DOMAIN     Public panel domain (required)
   --ssh-host HOST     Public IP/name used by OpenWrt SSH tunnels (required)
   --ssh-port PORT     Public SSH port of the VPS (detected, otherwise 22)
-  --panel-network CIDR  Panel clients: 127.0.0.1/32, 192.168.1.0/24 or 0.0.0.0/0
+  --panel-network MODE  Panel clients: localhost, local/private or public/all
   --telemt-integration Route panel TLS through Telemt SNI fallback on port 443
   --telemt-config FILE Telemt TOML file (default: auto-detect)
   --internal-https-port PORT  Apache TLS upstream for Telemt (default: 8443)
@@ -476,12 +476,12 @@ interactive_setup() {
         echo >&2
         echo "Panel access by external client IPv4:" >&2
         echo "  1) localhost only (127.0.0.1)" >&2
-        echo "  2) local network (192.168.1.0/24)" >&2
+        echo "  2) all private local networks (10/8, 172.16/12, 192.168/16)" >&2
         echo "  3) all IPv4 addresses (0.0.0.0)" >&2
         panel_access_choice="$(ask 'Panel access mode' '3')"
         case "$panel_access_choice" in
             1) PANEL_ALLOWED_NETWORK="127.0.0.1/32" ;;
-            2) PANEL_ALLOWED_NETWORK="192.168.1.0/24" ;;
+            2) PANEL_ALLOWED_NETWORK="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" ;;
             3) PANEL_ALLOWED_NETWORK="0.0.0.0/0" ;;
             *) echo "Choose 1, 2 or 3" >&2; continue ;;
         esac
@@ -576,9 +576,11 @@ case "$SSH_HOST" in ''|*[!A-Za-z0-9:.-]*) usage ;; esac
 case "$SSH_PORT" in ''|*[!0-9]*) usage ;; esac
 [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] || usage
 case "$PANEL_ALLOWED_NETWORK" in
-    127.0.0.1|127.0.0.1/32) PANEL_ALLOWED_NETWORK="127.0.0.1/32" ;;
-    192.168.1.0/24) ;;
-    0.0.0.0|0.0.0.0/0) PANEL_ALLOWED_NETWORK="0.0.0.0/0" ;;
+    localhost|127.0.0.1|127.0.0.1/32) PANEL_ALLOWED_NETWORK="127.0.0.1/32" ;;
+    local|private|10.0.0.0/8,172.16.0.0/12,192.168.0.0/16)
+        PANEL_ALLOWED_NETWORK="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+        ;;
+    public|all|0.0.0.0|0.0.0.0/0) PANEL_ALLOWED_NETWORK="0.0.0.0/0" ;;
     *) echo "Invalid --panel-network mode" >&2; exit 2 ;;
 esac
 case "$INTERNAL_HTTPS_PORT" in ''|*[!0-9]*) usage ;; esac
