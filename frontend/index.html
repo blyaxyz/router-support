@@ -13,17 +13,23 @@
       <h1>Router Support</h1>
     </div>
     <div class="connection-token" aria-live="polite">
-      <span>Токен подключения OpenWrt</span>
-      <div>
+      <div class="connection-row">
+        <span>Сервер SSH</span>
+        <code id="server-address">Загрузка…</code>
+      </div>
+      <div class="connection-row">
+        <span>Токен подключения</span>
         <code id="connection-token">Загрузка…</code>
         <button id="copy-connection-token" class="secondary" type="button" disabled>Копировать</button>
       </div>
+      <button id="copy-install-command" class="secondary" type="button" disabled>Копировать команду установки OpenWrt</button>
     </div>
   </header>
   <main>
     <section class="summary" aria-label="Сводка">
       <article><span id="total">—</span><small>Всего устройств</small></article>
       <article><span id="online">—</span><small>Онлайн</small></article>
+      <article><span id="degraded">—</span><small>Без SSH-туннеля</small></article>
       <article><span id="offline">—</span><small>Офлайн</small></article>
     </section>
     <section class="toolbar">
@@ -43,7 +49,7 @@
         <div><dt>UUID</dt><dd class="uuid"></dd></div>
         <div><dt>OpenWrt</dt><dd class="firmware"></dd></div>
         <div><dt>MAC</dt><dd class="mac"></dd></div>
-        <div><dt>Reverse SSH</dt><dd class="port"></dd></div>
+        <div><dt>Reverse SSH</dt><dd><span class="port"></span><br><span class="tunnel"></span></dd></div>
         <div><dt>Heartbeat</dt><dd class="seen"></dd></div>
       </dl>
       <div class="support-links"></div>

@@ -20,8 +20,8 @@ COMMITTED=0
 mkdir -p "$BACKUP_DIR"
 cp "$CONFIG_DIR/config" "$BACKUP_DIR/config"
 cp "$CONFIG_DIR/state" "$BACKUP_DIR/state"
-if [ -f /.ssh/known_hosts ]; then
-    cp /.ssh/known_hosts "$BACKUP_DIR/known_hosts"
+if [ -f /root/.ssh/known_hosts ]; then
+    cp /root/.ssh/known_hosts "$BACKUP_DIR/known_hosts"
 fi
 if [ -f /etc/dropbear/authorized_keys ]; then
     cp /etc/dropbear/authorized_keys "$BACKUP_DIR/authorized_keys"
@@ -34,11 +34,11 @@ rollback() {
         cp "$BACKUP_DIR/config" "$CONFIG_DIR/config"
         cp "$BACKUP_DIR/state" "$CONFIG_DIR/state"
         if [ -f "$BACKUP_DIR/known_hosts" ]; then
-            mkdir -p /.ssh
-            cp "$BACKUP_DIR/known_hosts" /.ssh/known_hosts
-            chmod 600 /.ssh/known_hosts
+            mkdir -p /root/.ssh
+            cp "$BACKUP_DIR/known_hosts" /root/.ssh/known_hosts
+            chmod 600 /root/.ssh/known_hosts
         else
-            rm -f /.ssh/known_hosts
+            rm -f /root/.ssh/known_hosts
         fi
         if [ -f "$BACKUP_DIR/authorized_keys" ]; then
             cp "$BACKUP_DIR/authorized_keys" /etc/dropbear/authorized_keys

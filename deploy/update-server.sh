@@ -13,6 +13,14 @@ INSTALL_ROOT="/opt/router-support"
     exit 1
 }
 
+# Migrate installations where useradd left the key-only tunnel account locked.
+if passwd -S router-tunnel 2>/dev/null | grep -q ' L '; then
+    random_password="$(openssl rand -hex 32)"
+    random_password_hash="$(openssl passwd -6 "$random_password")"
+    usermod --password "$random_password_hash" router-tunnel
+    unset random_password random_password_hash
+fi
+
 for directory in backend frontend openwrt-agent deploy scripts docs; do
     install -d -o root -g root -m 0755 "$INSTALL_ROOT/$directory"
     cp -a "$PROJECT_ROOT/$directory/." "$INSTALL_ROOT/$directory/"

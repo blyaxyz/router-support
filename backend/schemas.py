@@ -72,6 +72,9 @@ class HeartbeatResponse(BaseModel):
     accepted: Literal[True] = True
     server_time: datetime
     support_public_key: str
+    ssh_host: str
+    ssh_host_key: str
+    ssh_server_port: int
 
 
 class SupportSessionResponse(BaseModel):
@@ -91,7 +94,8 @@ class RouterResponse(BaseModel):
     ram_mb: int | None
     mac_address: str
     ssh_port: int
-    status: Literal["online", "offline"]
+    status: Literal["online", "degraded", "offline"]
+    tunnel_status: Literal["connected", "disconnected"]
     created_at: datetime
     last_seen: datetime
 

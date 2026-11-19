@@ -5,8 +5,8 @@ CONFIG_DIR="${ROUTER_SUPPORT_CONFIG_DIR:-/etc/router-support}"
 CONFIG_FILE="$CONFIG_DIR/config"
 STATE_FILE="$CONFIG_DIR/state"
 KEY_FILE="$CONFIG_DIR/id_router_support"
-# procd starts root services with HOME=/ on OpenWrt; Dropbear reads this path.
-KNOWN_HOSTS="/.ssh/known_hosts"
+# Dropbear uses root's passwd home directory even when procd exports HOME=/.
+KNOWN_HOSTS="/root/.ssh/known_hosts"
 TUNNEL_PID=""
 
 log() {
@@ -119,6 +119,27 @@ forget_bootstrap_token() {
     BOOTSTRAP_TOKEN=""
 }
 
+install_server_host_key() {
+    host_key="$1"
+    case "$host_key" in
+        ssh-ed25519\ *|ssh-rsa\ *) ;;
+        *) log "server returned an invalid SSH host key"; return 1 ;;
+    esac
+    mkdir -p "$(dirname "$KNOWN_HOSTS")"
+    chmod 700 "$(dirname "$KNOWN_HOSTS")"
+    temporary="$KNOWN_HOSTS.tmp"
+    if [ -f "$KNOWN_HOSTS" ]; then
+        # Dropbear indexes known hosts by hostname even on a non-standard port.
+        grep -vF "$SSH_HOST " "$KNOWN_HOSTS" | \
+            grep -vF "[$SSH_HOST]:$SSH_SERVER_PORT " >"$temporary" || true
+    else
+        : >"$temporary"
+    fi
+    printf '%s %s\n' "$SSH_HOST" "$host_key" >>"$temporary"
+    mv "$temporary" "$KNOWN_HOSTS"
+    chmod 600 "$KNOWN_HOSTS"
+}
+
 register_device() {
     [ -n "${BOOTSTRAP_TOKEN:-}" ] || {
         log "registration requires BOOTSTRAP_TOKEN"
@@ -142,22 +163,7 @@ register_device() {
     case "$SSH_SERVER_PORT$REVERSE_PORT$HEARTBEAT_INTERVAL" in
         ''|*[!0-9]*) log "invalid numeric value in response"; return 1 ;;
     esac
-    mkdir -p "$(dirname "$KNOWN_HOSTS")"
-    chmod 700 "$(dirname "$KNOWN_HOSTS")"
-    if [ "$SSH_SERVER_PORT" = "22" ]; then
-        known_host_target="$SSH_HOST"
-    else
-        known_host_target="[$SSH_HOST]:$SSH_SERVER_PORT"
-    fi
-    temporary="$KNOWN_HOSTS.tmp"
-    if [ -f "$KNOWN_HOSTS" ]; then
-        grep -vF "$known_host_target " "$KNOWN_HOSTS" >"$temporary" || true
-    else
-        : >"$temporary"
-    fi
-    printf '%s %s\n' "$known_host_target" "$host_key" >>"$temporary"
-    mv "$temporary" "$KNOWN_HOSTS"
-    chmod 600 "$KNOWN_HOSTS"
+    install_server_host_key "$host_key"
     write_state
     # A compromised router must not expose the fleet-wide enrollment secret.
     forget_bootstrap_token
@@ -178,6 +184,21 @@ heartbeat() {
     body="{\"uuid\":\"$(json_escape "$DEVICE_UUID")\",\"mac_address\":\"$(json_escape "$mac_value")\",\"ssh_host_key\":\"$(json_escape "$router_host_key")\"}"
     response="$(http_post "$SERVER_URL/api/routers/heartbeat" "$DEVICE_TOKEN" "$body")"
     support_key="$(json_get "$response" '.support_public_key')"
+    response_ssh_host="$(json_get "$response" '.ssh_host')"
+    response_ssh_port="$(json_get "$response" '.ssh_server_port')"
+    response_host_key="$(json_get "$response" '.ssh_host_key')"
+    if [ -n "$response_ssh_host" ] && [ -n "$response_ssh_port" ]; then
+        case "$response_ssh_host" in
+            *[!A-Za-z0-9._:@-]*) log "unsafe SSH host in heartbeat"; return 1 ;;
+        esac
+        case "$response_ssh_port" in
+            ''|*[!0-9]*) log "invalid SSH port in heartbeat"; return 1 ;;
+        esac
+        SSH_HOST="$response_ssh_host"
+        SSH_SERVER_PORT="$response_ssh_port"
+        install_server_host_key "$response_host_key"
+        write_state
+    fi
     case "$support_key" in
         ssh-ed25519\ *|ssh-rsa\ *) install_support_key "$support_key" ;;
         *) log "heartbeat response has no valid support key"; return 1 ;;
@@ -242,13 +263,20 @@ run_tunnel() {
     if [ -z "${DEVICE_TOKEN:-}" ]; then
         register_device
     fi
-    exec dbclient -N -T \
+    log "connecting reverse SSH tunnel to $SSH_HOST:$SSH_SERVER_PORT (server port $REVERSE_PORT)"
+    if dbclient -N -T \
         -K 30 -I 0 \
         -o ExitOnForwardFailure=yes \
         -i "$KEY_FILE" \
         -p "$SSH_SERVER_PORT" \
         -R "127.0.0.1:$REVERSE_PORT:127.0.0.1:22" \
-        "$SSH_USER@$SSH_HOST"
+        "$SSH_USER@$SSH_HOST"; then
+        log "reverse SSH tunnel ended normally"
+    else
+        status="$?"
+        log "reverse SSH tunnel failed with exit status $status; check the preceding dbclient message"
+        return "$status"
+    fi
 }
 
 run_heartbeat_loop() {

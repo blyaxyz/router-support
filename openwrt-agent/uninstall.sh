@@ -69,6 +69,7 @@ if [ -n "$SSH_HOST" ]; then
         /root/.ssh/known_hosts \
         "$CONFIG_DIR/.ssh/known_hosts"; do
         remove_matching_line "$known_hosts" "$known_host_target "
+        remove_matching_line "$known_hosts" "$SSH_HOST "
     done
 fi
 

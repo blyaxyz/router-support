@@ -6,6 +6,7 @@ const elements = {
   search: document.querySelector('#search'),
   total: document.querySelector('#total'),
   online: document.querySelector('#online'),
+  degraded: document.querySelector('#degraded'),
   offline: document.querySelector('#offline'),
   template: document.querySelector('#router-card'),
 };
@@ -40,9 +41,14 @@ function render() {
     card.querySelector('.firmware').textContent = router.firmware || '—';
     card.querySelector('.mac').textContent = router.mac_address || '—';
     card.querySelector('.port').textContent = `127.0.0.1:${router.ssh_port}`;
+    card.querySelector('.tunnel').textContent = router.tunnel_status === 'connected'
+      ? 'Туннель подключён'
+      : 'Туннель не подключён';
     card.querySelector('.seen').textContent = relativeTime(router.last_seen);
     const badge = card.querySelector('.status');
-    badge.textContent = router.status === 'online' ? 'Онлайн' : 'Офлайн';
+    badge.textContent = {
+      online: 'Онлайн', degraded: 'Нет SSH-туннеля', offline: 'Офлайн',
+    }[router.status] || router.status;
     badge.classList.add(router.status);
     card.querySelector('.rename').addEventListener('click', () => renameRouter(router));
     const button = card.querySelector('.support-button');
@@ -74,6 +80,7 @@ function render() {
   }
   elements.total.textContent = state.routers.length;
   elements.online.textContent = state.routers.filter((router) => router.status === 'online').length;
+  elements.degraded.textContent = state.routers.filter((router) => router.status === 'degraded').length;
   elements.offline.textContent = state.routers.filter((router) => router.status === 'offline').length;
   elements.message.textContent = filtered.length ? '' : 'Устройства не найдены';
 }
@@ -174,16 +181,22 @@ async function loadRouters() {
 
 async function loadConnectionToken() {
   const tokenElement = document.querySelector('#connection-token');
+  const serverElement = document.querySelector('#server-address');
   const copyButton = document.querySelector('#copy-connection-token');
+  const installButton = document.querySelector('#copy-install-command');
   try {
     const response = await fetch('/api/auth/connection-token');
     requireAccess(response);
     if (!response.ok) throw new Error(`Ошибка API: ${response.status}`);
     const result = await response.json();
     tokenElement.textContent = result.token;
+    serverElement.textContent = `${result.ssh_host}:${result.ssh_port}`;
+    installButton.dataset.command = result.install_command;
     copyButton.disabled = false;
+    installButton.disabled = false;
   } catch (error) {
     tokenElement.textContent = 'Недоступен';
+    serverElement.textContent = 'Недоступен';
   }
 }
 
@@ -197,6 +210,16 @@ document.querySelector('#copy-connection-token').addEventListener('click', async
     button.textContent = 'Не удалось';
   }
   setTimeout(() => { button.textContent = 'Копировать'; }, 1500);
+});
+document.querySelector('#copy-install-command').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  try {
+    await navigator.clipboard.writeText(button.dataset.command);
+    button.textContent = 'Команда скопирована';
+  } catch (error) {
+    button.textContent = 'Не удалось скопировать';
+  }
+  setTimeout(() => { button.textContent = 'Копировать команду установки OpenWrt'; }, 1500);
 });
 document.querySelector('#terminal-close').addEventListener('click', () => {
   if (terminalSocket) terminalSocket.close();

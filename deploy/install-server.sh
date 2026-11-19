@@ -647,6 +647,15 @@ if ! id router-tunnel >/dev/null 2>&1; then
     useradd --system --create-home --home-dir /var/lib/router-tunnel \
         --shell /usr/sbin/nologin router-tunnel
 fi
+# Debian's system user starts locked, and sshd rejects public keys for a locked
+# account. Give it an unknowable random password while the Match block keeps
+# all password authentication disabled and permits only public-key tunnels.
+if passwd -S router-tunnel 2>/dev/null | grep -q ' L '; then
+    random_password="$(openssl rand -hex 32)"
+    random_password_hash="$(openssl passwd -6 "$random_password")"
+    usermod --password "$random_password_hash" router-tunnel
+    unset random_password random_password_hash
+fi
 
 install -d -o root -g root -m 0755 "$INSTALL_ROOT" "$CONFIG_ROOT"
 install -d -o router-tunnel -g router-tunnel -m 0700 "$INSTALL_ROOT/data"

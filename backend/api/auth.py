@@ -18,9 +18,18 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.get("/connection-token", dependencies=[Depends(require_engineer)])
-def connection_token(request: Request, response: Response) -> dict[str, str]:
+def connection_token(request: Request, response: Response) -> dict[str, str | int]:
     response.headers["Cache-Control"] = "no-store"
-    return {"token": request.app.state.settings.bootstrap_token}
+    settings = request.app.state.settings
+    return {
+        "token": settings.bootstrap_token,
+        "ssh_host": settings.ssh_host,
+        "ssh_port": settings.ssh_port,
+        "install_command": (
+            "curl -fsSL https://raw.githubusercontent.com/blyaxyz/"
+            "router-support/main/bootstrap-openwrt.sh | sh"
+        ),
+    }
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)

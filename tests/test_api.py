@@ -97,6 +97,8 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
         )
         assert heartbeat.status_code == 200
         assert heartbeat.json()["support_public_key"].startswith("ssh-ed25519 ")
+        assert heartbeat.json()["ssh_host"] == "support.example.com"
+        assert heartbeat.json()["ssh_server_port"] == 2222
 
         assert client.get("/api/routers").status_code == 403
         assert client.get(
@@ -109,7 +111,15 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
         assert listing.status_code == 200
         assert listing.json()[0]["firmware"] == "24.10.0"
         assert listing.json()[0]["mac_address"] == "AA:BB:CC:DD:EE:01"
-        assert listing.json()[0]["status"] == "online"
+        assert listing.json()[0]["status"] == "degraded"
+        assert listing.json()[0]["tunnel_status"] == "disconnected"
+
+        missing_tunnel = client.post(
+            f"/api/routers/{UUID}/support/start",
+            headers={"Authorization": "Bearer engineer-test-token"},
+        )
+        assert missing_tunnel.status_code == 409
+        assert "reverse SSH tunnel is not listening" in missing_tunnel.json()["detail"]
 
     keys = (tmp_path / "authorized_keys").read_text()
     assert 'permitlisten="127.0.0.1:22001"' in keys
@@ -178,7 +188,15 @@ def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
         assert client.get("/api/routers").status_code == 200
         connection_token = client.get("/api/auth/connection-token")
         assert connection_token.status_code == 200
-        assert connection_token.json() == {"token": "bootstrap-test-token"}
+        assert connection_token.json() == {
+            "token": "bootstrap-test-token",
+            "ssh_host": "support.example.com",
+            "ssh_port": 2222,
+            "install_command": (
+                "curl -fsSL https://raw.githubusercontent.com/blyaxyz/"
+                "router-support/main/bootstrap-openwrt.sh | sh"
+            ),
+        }
 
         assert client.post("/api/auth/logout").status_code == 204
         assert client.get("/api/routers").status_code == 403

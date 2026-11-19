@@ -149,27 +149,42 @@ def heartbeat(payload: HeartbeatRequest, request: Request, token: str = Depends(
             (*updates.values(), str(payload.uuid)),
         )
     support_public_key = settings.support_public_key.read_text(encoding="utf-8").strip()
-    return HeartbeatResponse(server_time=now, support_public_key=support_public_key)
+    return HeartbeatResponse(
+        server_time=now,
+        support_public_key=support_public_key,
+        ssh_host=settings.ssh_host,
+        ssh_host_key=settings.ssh_host_key,
+        ssh_server_port=settings.ssh_port,
+    )
+
+
+def _router_status(request: Request, last_seen: str, ssh_port: int) -> tuple[str, str]:
+    threshold = _now() - timedelta(seconds=request.app.state.settings.heartbeat_timeout_seconds)
+    tunnel_connected = request.app.state.session_manager.tunnel_is_listening(ssh_port)
+    tunnel_status = "connected" if tunnel_connected else "disconnected"
+    if datetime.fromisoformat(last_seen) < threshold:
+        return "offline", tunnel_status
+    return ("online" if tunnel_connected else "degraded"), tunnel_status
 
 
 @router.get("", response_model=list[RouterResponse], dependencies=[Depends(_require_engineer)])
 def list_routers(request: Request):
-    settings = request.app.state.settings
-    threshold = _now() - timedelta(seconds=settings.heartbeat_timeout_seconds)
     with request.app.state.database.connect() as connection:
         rows = connection.execute(
             """SELECT uuid, name, model, firmware, ram_mb, mac_address, ssh_port,
                       created_at, last_seen FROM routers ORDER BY name"""
         ).fetchall()
-    return [
-        RouterResponse(
-            **dict(row),
-            status="online"
-            if datetime.fromisoformat(row["last_seen"]) >= threshold
-            else "offline",
+    result = []
+    for row in rows:
+        status_value, tunnel_status = _router_status(
+            request, row["last_seen"], row["ssh_port"]
         )
-        for row in rows
-    ]
+        result.append(
+            RouterResponse(
+                **dict(row), status=status_value, tunnel_status=tunnel_status
+            )
+        )
+    return result
 
 
 @router.patch(
@@ -187,7 +202,6 @@ def rename_router(router_uuid: str, payload: RenameRouterRequest, request: Reque
     dependencies=[Depends(_require_engineer)],
 )
 def get_router(router_uuid: str, request: Request):
-    settings = request.app.state.settings
     with request.app.state.database.connect() as connection:
         row = connection.execute(
             """SELECT uuid, name, model, firmware, ram_mb, mac_address, ssh_port,
@@ -196,11 +210,12 @@ def get_router(router_uuid: str, request: Request):
         ).fetchone()
     if not row:
         raise HTTPException(404, "router not found")
-    threshold = _now() - timedelta(seconds=settings.heartbeat_timeout_seconds)
+    status_value, tunnel_status = _router_status(
+        request, row["last_seen"], row["ssh_port"]
+    )
     return RouterResponse(
         **dict(row),
-        status="online"
-        if datetime.fromisoformat(row["last_seen"]) >= threshold
-        else "offline",
+        status=status_value,
+        tunnel_status=tunnel_status,
     )
 
