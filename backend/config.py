@@ -35,6 +35,17 @@ def _panel_networks() -> tuple[IPv4Network, ...]:
     return tuple(networks)
 
 
+def _ip_lookup_url() -> str:
+    value = os.getenv(
+        "ROUTER_SUPPORT_IP_LOOKUP_URL", "https://ipwho.is/{ip}"
+    ).strip()
+    if value and (not value.startswith("https://") or "{ip}" not in value):
+        raise RuntimeError(
+            "ROUTER_SUPPORT_IP_LOOKUP_URL must be empty or an HTTPS URL containing {ip}"
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     database_path: Path
@@ -54,6 +65,7 @@ class Settings:
     support_session_seconds: int
     heartbeat_timeout_seconds: int
     panel_allowed_networks: tuple[IPv4Network, ...]
+    ip_lookup_url: str = "https://ipwho.is/{ip}"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -89,5 +101,6 @@ class Settings:
                 os.getenv("ROUTER_SUPPORT_HEARTBEAT_TIMEOUT", "90")
             ),
             panel_allowed_networks=_panel_networks(),
+            ip_lookup_url=_ip_lookup_url(),
         )
 

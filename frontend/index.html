@@ -49,9 +49,19 @@
         <div><dt>UUID</dt><dd class="uuid"></dd></div>
         <div><dt>OpenWrt</dt><dd class="firmware"></dd></div>
         <div><dt>MAC</dt><dd class="mac"></dd></div>
+        <div><dt>Внешний IP</dt><dd class="public-ip"></dd></div>
+        <div><dt>Откуда</dt><dd class="ip-location"></dd></div>
+        <div><dt>Провайдер</dt><dd class="ip-isp"></dd></div>
         <div><dt>Reverse SSH</dt><dd><span class="port"></span><br><span class="tunnel"></span></dd></div>
         <div><dt>Heartbeat</dt><dd class="seen"></dd></div>
       </dl>
+      <label class="notes-label">Заметки
+        <textarea class="notes" maxlength="2000" rows="3" placeholder="Адрес установки, контакт, особенности…"></textarea>
+      </label>
+      <div class="device-actions">
+        <button class="save-notes secondary" type="button">Сохранить заметки</button>
+        <button class="delete-router danger" type="button">Удалить подключение</button>
+      </div>
       <div class="support-links"></div>
       <button class="support-button">Начать поддержку</button>
     </article>

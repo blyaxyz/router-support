@@ -29,8 +29,9 @@ function relativeTime(value) {
 function render() {
   const query = elements.search.value.trim().toLowerCase();
   const filtered = state.routers.filter((router) =>
-    [router.uuid, router.name, router.model, router.mac_address || '']
-      .some((value) => value.toLowerCase().includes(query))
+    [router.uuid, router.name, router.model, router.mac_address, router.public_ip,
+      router.ip_isp, router.ip_city, router.notes]
+      .some((value) => (value || '').toLowerCase().includes(query))
   );
   elements.routers.replaceChildren();
   for (const router of filtered) {
@@ -40,6 +41,13 @@ function render() {
     card.querySelector('.uuid').textContent = router.uuid;
     card.querySelector('.firmware').textContent = router.firmware || '—';
     card.querySelector('.mac').textContent = router.mac_address || '—';
+    card.querySelector('.public-ip').textContent = router.public_ip || '—';
+    card.querySelector('.ip-location').textContent = [
+      router.ip_country, router.ip_region, router.ip_city,
+    ].filter(Boolean).join(', ') || '—';
+    card.querySelector('.ip-isp').textContent = [
+      router.ip_isp, router.ip_asn ? `AS${String(router.ip_asn).replace(/^AS/i, '')}` : '',
+    ].filter(Boolean).join(' · ') || '—';
     card.querySelector('.port').textContent = `127.0.0.1:${router.ssh_port}`;
     card.querySelector('.tunnel').textContent = router.tunnel_status === 'connected'
       ? 'Туннель подключён'
@@ -51,6 +59,11 @@ function render() {
     }[router.status] || router.status;
     badge.classList.add(router.status);
     card.querySelector('.rename').addEventListener('click', () => renameRouter(router));
+    const notes = card.querySelector('.notes');
+    notes.value = router.notes || '';
+    card.querySelector('.save-notes').addEventListener('click', (event) =>
+      saveNotes(router, notes, event.currentTarget));
+    card.querySelector('.delete-router').addEventListener('click', () => deleteRouter(router));
     const button = card.querySelector('.support-button');
     const session = state.sessions.get(router.uuid);
     button.disabled = router.status !== 'online';
@@ -83,6 +96,51 @@ function render() {
   elements.degraded.textContent = state.routers.filter((router) => router.status === 'degraded').length;
   elements.offline.textContent = state.routers.filter((router) => router.status === 'offline').length;
   elements.message.textContent = filtered.length ? '' : 'Устройства не найдены';
+}
+
+async function saveNotes(router, textarea, button) {
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/routers/${router.uuid}/notes`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: textarea.value }),
+    });
+    requireAccess(response);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || `Ошибка сохранения: ${response.status}`);
+    router.notes = result.notes;
+    textarea.value = result.notes;
+    button.textContent = 'Сохранено';
+  } catch (error) {
+    elements.message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    setTimeout(() => { button.textContent = 'Сохранить заметки'; }, 1500);
+  }
+}
+
+async function deleteRouter(router) {
+  const confirmed = window.confirm(
+    `Удалить подключение «${router.name}»?\n\n` +
+    'Активная поддержка будет завершена, агент остановлен, а ключ и история устройства удалены с сервера. ' +
+    'Для возврата устройства потребуется заново настроить подключение на OpenWrt.'
+  );
+  if (!confirmed) return;
+  try {
+    const response = await fetch(`/api/routers/${router.uuid}`, { method: 'DELETE' });
+    requireAccess(response);
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result.detail || `Ошибка удаления: ${response.status}`);
+    }
+    state.sessions.delete(router.uuid);
+    state.routers = state.routers.filter((item) => item.uuid !== router.uuid);
+    render();
+    elements.message.textContent = `Подключение «${router.name}» удалено`;
+  } catch (error) {
+    elements.message.textContent = error.message;
+  }
 }
 
 async function renameRouter(router) {

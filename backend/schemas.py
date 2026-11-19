@@ -96,12 +96,23 @@ class RouterResponse(BaseModel):
     ssh_port: int
     status: Literal["online", "degraded", "offline"]
     tunnel_status: Literal["connected", "disconnected"]
+    notes: str
+    public_ip: str
+    ip_country: str
+    ip_region: str
+    ip_city: str
+    ip_isp: str
+    ip_asn: str
     created_at: datetime
     last_seen: datetime
 
 
 class RenameRouterRequest(BaseModel):
     hostname: str = Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+class RouterNotesRequest(BaseModel):
+    notes: str = Field(default="", max_length=2000)
 
 
 class TerminalTicketResponse(BaseModel):

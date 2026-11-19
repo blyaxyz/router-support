@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS routers (
     public_key TEXT NOT NULL,
     router_ssh_host_key TEXT NOT NULL DEFAULT '',
     token_digest TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    public_ip TEXT NOT NULL DEFAULT '',
+    ip_country TEXT NOT NULL DEFAULT '',
+    ip_region TEXT NOT NULL DEFAULT '',
+    ip_city TEXT NOT NULL DEFAULT '',
+    ip_isp TEXT NOT NULL DEFAULT '',
+    ip_asn TEXT NOT NULL DEFAULT '',
+    ip_lookup_at TEXT,
     created_at TEXT NOT NULL,
     last_seen TEXT NOT NULL
 );
@@ -76,6 +84,21 @@ class Database:
                 connection.execute(
                     "ALTER TABLE routers ADD COLUMN mac_address TEXT NOT NULL DEFAULT ''"
                 )
+            migrations = {
+                "notes": "TEXT NOT NULL DEFAULT ''",
+                "public_ip": "TEXT NOT NULL DEFAULT ''",
+                "ip_country": "TEXT NOT NULL DEFAULT ''",
+                "ip_region": "TEXT NOT NULL DEFAULT ''",
+                "ip_city": "TEXT NOT NULL DEFAULT ''",
+                "ip_isp": "TEXT NOT NULL DEFAULT ''",
+                "ip_asn": "TEXT NOT NULL DEFAULT ''",
+                "ip_lookup_at": "TEXT",
+            }
+            for column, definition in migrations.items():
+                if column not in columns:
+                    connection.execute(
+                        f"ALTER TABLE routers ADD COLUMN {column} {definition}"
+                    )
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:

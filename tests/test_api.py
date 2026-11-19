@@ -32,6 +32,7 @@ def settings(tmp_path: Path) -> Settings:
         support_session_seconds=3600,
         heartbeat_timeout_seconds=90,
         panel_allowed_networks=(IPv4Network("0.0.0.0/0"),),
+        ip_lookup_url="",
     )
 
 
@@ -111,6 +112,8 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
         assert listing.status_code == 200
         assert listing.json()[0]["firmware"] == "24.10.0"
         assert listing.json()[0]["mac_address"] == "AA:BB:CC:DD:EE:01"
+        assert listing.json()[0]["public_ip"] == "127.0.0.1"
+        assert listing.json()[0]["notes"] == ""
         assert listing.json()[0]["status"] == "degraded"
         assert listing.json()[0]["tunnel_status"] == "disconnected"
 
@@ -124,6 +127,40 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
     keys = (tmp_path / "authorized_keys").read_text()
     assert 'permitlisten="127.0.0.1:22001"' in keys
     assert PUBLIC_KEY in keys
+
+
+def test_notes_and_delete_router_connection(tmp_path: Path):
+    (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
+    app = create_app(settings(tmp_path))
+    headers = {"Authorization": "Bearer engineer-test-token"}
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        registration = client.post(
+            "/api/routers/register",
+            headers={"Authorization": "Bearer bootstrap-test-token"},
+            json={
+                "uuid": UUID,
+                "hostname": "router-1",
+                "public_key": PUBLIC_KEY,
+            },
+        )
+        assert registration.status_code == 201
+
+        notes = client.put(
+            f"/api/routers/{UUID}/notes",
+            headers=headers,
+            json={"notes": "Склад №2, контакт Иван"},
+        )
+        assert notes.status_code == 200
+        assert notes.json() == {"notes": "Склад №2, контакт Иван"}
+        assert client.get("/api/routers", headers=headers).json()[0]["notes"] == (
+            "Склад №2, контакт Иван"
+        )
+
+        deleted = client.delete(f"/api/routers/{UUID}", headers=headers)
+        assert deleted.status_code == 204
+        assert client.get("/api/routers", headers=headers).json() == []
+        assert (tmp_path / "authorized_keys").read_text() == ""
+        assert client.delete(f"/api/routers/{UUID}", headers=headers).status_code == 404
 
 
 def test_rejects_invalid_credentials(tmp_path: Path):

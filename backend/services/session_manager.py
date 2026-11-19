@@ -204,6 +204,55 @@ class SessionManager:
                 "UPDATE routers SET name = ? WHERE uuid = ?", (hostname, router_uuid)
             )
 
+    def disconnect_router_agent(
+        self, router_uuid: str, ssh_port: int, router_host_key: str
+    ) -> None:
+        if not self.tunnel_is_listening(ssh_port):
+            logger.info(
+                "router agent disconnect skipped: tunnel absent router_uuid=%s reverse_port=%s",
+                router_uuid,
+                ssh_port,
+            )
+            return
+        try:
+            self._write_known_host(ssh_port, router_host_key)
+            result = subprocess.run(
+                [
+                    *self._ssh_base_command(ssh_port),
+                    "root@127.0.0.1",
+                    "nohup sh -c 'sleep 1; /etc/init.d/router-support stop' "
+                    ">/dev/null 2>&1 &",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "router agent disconnect command failed router_uuid=%s "
+                    "reverse_port=%s exit_code=%s stderr=%r",
+                    router_uuid,
+                    ssh_port,
+                    result.returncode,
+                    result.stderr[-1000:],
+                )
+            else:
+                logger.info(
+                    "router agent disconnect requested router_uuid=%s reverse_port=%s",
+                    router_uuid,
+                    ssh_port,
+                )
+        except (OSError, subprocess.TimeoutExpired, HTTPException) as error:
+            logger.warning(
+                "router agent disconnect failed router_uuid=%s reverse_port=%s error=%s",
+                router_uuid,
+                ssh_port,
+                error,
+            )
+
     def terminal_spec(self, router_uuid: str) -> tuple[int, list[str]]:
         router = self._router_for_access(router_uuid)
         with self.database.connect() as connection:
