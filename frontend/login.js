@@ -17,6 +17,12 @@ form.addEventListener('submit', async (event) => {
       tokenInput.select();
       return;
     }
+    if (response.status === 429) {
+      const seconds = Number(response.headers.get('Retry-After') || 300);
+      const minutes = Math.max(1, Math.ceil(seconds / 60));
+      error.textContent = `Слишком много попыток. Повторите через ${minutes} мин.`;
+      return;
+    }
     if (!response.ok) throw new Error(`Ошибка входа: ${response.status}`);
     location.replace('/');
   } catch (requestError) {

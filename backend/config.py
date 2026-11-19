@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from ipaddress import IPv4Network, ip_network
 from pathlib import Path
 
 
@@ -10,6 +11,21 @@ def _required(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} must be configured")
     return value
+
+
+def _panel_network() -> IPv4Network:
+    value = os.getenv("ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK", "0.0.0.0/0").strip()
+    aliases = {
+        "0.0.0.0": "0.0.0.0/0",
+        "127.0.0.1": "127.0.0.1/32",
+    }
+    try:
+        network = ip_network(aliases.get(value, value), strict=False)
+    except ValueError as error:
+        raise RuntimeError("invalid ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK") from error
+    if not isinstance(network, IPv4Network):
+        raise RuntimeError("ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK must be IPv4")
+    return network
 
 
 @dataclass(frozen=True)
@@ -30,6 +46,7 @@ class Settings:
     public_base_domain: str
     support_session_seconds: int
     heartbeat_timeout_seconds: int
+    panel_allowed_network: IPv4Network
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -64,5 +81,6 @@ class Settings:
             heartbeat_timeout_seconds=int(
                 os.getenv("ROUTER_SUPPORT_HEARTBEAT_TIMEOUT", "90")
             ),
+            panel_allowed_network=_panel_network(),
         )
 

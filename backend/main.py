@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, RedirectResponse
 
+from backend.access import LoginAttemptLimiter, PanelAccessMiddleware
 from backend.api.auth import router as auth_router
 from backend.api.routers import router as routers_router
 from backend.api.sessions import router as sessions_router
@@ -54,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.database = database
     app.state.session_manager = session_manager
     app.state.terminal_tickets = TerminalTickets()
+    app.state.login_attempt_limiter = LoginAttemptLimiter()
     app.include_router(auth_router)
     app.include_router(routers_router)
     app.include_router(sessions_router)
@@ -63,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database=database,
         settings=configured,
     )
+    app.add_middleware(PanelAccessMiddleware, settings=configured)
 
     @app.get("/healthz", tags=["system"])
     def healthcheck():

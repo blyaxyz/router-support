@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
+from backend.access import external_client_ip
 from backend.auth import (
     ENGINEER_COOKIE,
     ENGINEER_COOKIE_SECONDS,
@@ -27,17 +28,40 @@ def login(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> Response:
+    client_ip = str(external_client_ip(request.scope) or "unknown")
+    limiter = request.app.state.login_attempt_limiter
+    retry_after = limiter.retry_after(client_ip)
+    if retry_after:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "too many failed login attempts",
+            headers={
+                "Cache-Control": "no-store",
+                "Retry-After": str(retry_after),
+            },
+        )
     expected = request.app.state.settings.engineer_token
     supplied = ""
     if authorization and authorization.startswith("Bearer "):
         supplied = authorization.removeprefix("Bearer ").strip()
     if not supplied or not secrets.compare_digest(supplied, expected):
+        retry_after = limiter.record_failure(client_ip)
+        if retry_after:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "too many failed login attempts",
+                headers={
+                    "Cache-Control": "no-store",
+                    "Retry-After": str(retry_after),
+                },
+            )
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "invalid engineer token",
             headers={"Cache-Control": "no-store"},
         )
 
+    limiter.record_success(client_ip)
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.headers["Cache-Control"] = "no-store"
     response.set_cookie(

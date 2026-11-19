@@ -10,6 +10,7 @@ Options:
   --domain DOMAIN     Public panel domain (required)
   --ssh-host HOST     Public IP/name used by OpenWrt SSH tunnels (required)
   --ssh-port PORT     Public SSH port of the VPS (detected, otherwise 22)
+  --panel-network CIDR  Panel clients: 127.0.0.1/32, 192.168.1.0/24 or 0.0.0.0/0
   --telemt-integration Route panel TLS through Telemt SNI fallback on port 443
   --telemt-config FILE Telemt TOML file (default: auto-detect)
   --internal-https-port PORT  Apache TLS upstream for Telemt (default: 8443)
@@ -408,7 +409,7 @@ interrupt_install() {
 }
 
 interactive_setup() {
-    local public_ip panel_default email_answer listener_80 listener_443 telemt_answer wsl_answer wsl_networking
+    local public_ip panel_default email_answer listener_80 listener_443 telemt_answer wsl_answer wsl_networking panel_access_choice
     echo "Router Support Panel — server setup" >&2
     if [ "$WSL_MODE" -eq 1 ]; then
         wsl_networking="$(detect_wsl_networking_mode)"
@@ -471,6 +472,26 @@ interactive_setup() {
     esac
     SSH_HOST="$(ask 'Public SSH host/IP of the VPS' "$SSH_HOST")"
     SSH_PORT="$(ask 'Public SSH port of the VPS' "$SSH_PORT")"
+    while :; do
+        echo >&2
+        echo "Panel access by external client IPv4:" >&2
+        echo "  1) localhost only (127.0.0.1)" >&2
+        echo "  2) local network (192.168.1.0/24)" >&2
+        echo "  3) all IPv4 addresses (0.0.0.0)" >&2
+        panel_access_choice="$(ask 'Panel access mode' '3')"
+        case "$panel_access_choice" in
+            1) PANEL_ALLOWED_NETWORK="127.0.0.1/32" ;;
+            2) PANEL_ALLOWED_NETWORK="192.168.1.0/24" ;;
+            3) PANEL_ALLOWED_NETWORK="0.0.0.0/0" ;;
+            *) echo "Choose 1, 2 or 3" >&2; continue ;;
+        esac
+        if [ "$TELEMT_INTEGRATION" -eq 1 ] && [ "$PANEL_ALLOWED_NETWORK" != "0.0.0.0/0" ]; then
+            echo "Telemt SNI forwarding does not preserve the external client IP." >&2
+            echo "Choose public access or install without Telemt integration." >&2
+            continue
+        fi
+        break
+    done
     email_answer="$(ask "Let's Encrypt email (optional; enter 'skip' to omit)" "skip")"
     if [ "$email_answer" = "skip" ]; then
         EMAIL=""
@@ -487,6 +508,7 @@ interactive_setup() {
     echo "Configuration:" >&2
     echo "  Panel:    $DOMAIN" >&2
     echo "  SSH:      $SSH_HOST:$SSH_PORT" >&2
+    echo "  Access:   $PANEL_ALLOWED_NETWORK (external client IPv4)" >&2
     if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
         echo "  HTTPS:    Telemt :443 -> Apache 127.0.0.1:$INTERNAL_HTTPS_PORT" >&2
         echo "  Telemt:   $TELEMT_CONFIG" >&2
@@ -497,6 +519,9 @@ interactive_setup() {
     if [ "$WSL_MODE" -eq 1 ]; then
         echo "  Windows:  allow/forward TCP 80, 443 and public SSH $SSH_PORT" >&2
         echo "             do not expose internal 22001-22999, 31000+ or 8443" >&2
+        if [ "$PANEL_ALLOWED_NETWORK" != "0.0.0.0/0" ]; then
+            echo "  Notice:   restricted client IP modes require WSL mirrored networking" >&2
+        fi
     fi
     confirm="$(ask_yes_no 'Start installation' 'yes')"
     [ "$confirm" = "yes" ] || { echo "Installation cancelled" >&2; exit 0; }
@@ -511,6 +536,7 @@ IP_CERT_ADDRESS=""
 TELEMT_INTEGRATION=0
 TELEMT_CONFIG=""
 INTERNAL_HTTPS_PORT="8443"
+PANEL_ALLOWED_NETWORK="0.0.0.0/0"
 ALLOW_WSL=0
 WSL_MODE=0
 SKIP_PUBLIC_HTTP_CHECK=0
@@ -527,6 +553,7 @@ while [ "$#" -gt 0 ]; do
         --domain) DOMAIN="${2:-}"; shift 2 ;;
         --ssh-host) SSH_HOST="${2:-}"; shift 2 ;;
         --ssh-port) SSH_PORT="${2:-}"; shift 2 ;;
+        --panel-network) PANEL_ALLOWED_NETWORK="${2:-}"; shift 2 ;;
         --telemt-integration) TELEMT_INTEGRATION=1; shift ;;
         --telemt-config) TELEMT_CONFIG="${2:-}"; shift 2 ;;
         --internal-https-port) INTERNAL_HTTPS_PORT="${2:-}"; shift 2 ;;
@@ -548,6 +575,12 @@ case "$DOMAIN" in ''|*[!A-Za-z0-9.-]*) usage ;; esac
 case "$SSH_HOST" in ''|*[!A-Za-z0-9:.-]*) usage ;; esac
 case "$SSH_PORT" in ''|*[!0-9]*) usage ;; esac
 [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] || usage
+case "$PANEL_ALLOWED_NETWORK" in
+    127.0.0.1|127.0.0.1/32) PANEL_ALLOWED_NETWORK="127.0.0.1/32" ;;
+    192.168.1.0/24) ;;
+    0.0.0.0|0.0.0.0/0) PANEL_ALLOWED_NETWORK="0.0.0.0/0" ;;
+    *) echo "Invalid --panel-network mode" >&2; exit 2 ;;
+esac
 case "$INTERNAL_HTTPS_PORT" in ''|*[!0-9]*) usage ;; esac
 [ "$INTERNAL_HTTPS_PORT" -ge 1 ] && [ "$INTERNAL_HTTPS_PORT" -le 65535 ] || usage
 case "$IP_CERT_ADDRESS" in ''|*[!0-9.]*) [ -z "$IP_CERT_ADDRESS" ] || usage ;; esac
@@ -565,6 +598,10 @@ case "$IP_CERT_ADDRESS" in ''|*[!0-9.]*) [ -z "$IP_CERT_ADDRESS" ] || usage ;; e
 }
 [ "$TELEMT_INTEGRATION" -eq 0 ] || [ "$ENABLE_TLS" -eq 1 ] || {
     echo "Telemt SNI integration requires HTTPS" >&2
+    exit 2
+}
+[ "$TELEMT_INTEGRATION" -eq 0 ] || [ "$PANEL_ALLOWED_NETWORK" = "0.0.0.0/0" ] || {
+    echo "Restricted panel networks require a proxy that preserves client IP; Telemt SNI does not" >&2
     exit 2
 }
 if [ -n "$IP_CERT_ADDRESS" ] && ! valid_ipv4 "$IP_CERT_ADDRESS"; then
@@ -655,6 +692,7 @@ if [ ! -f "$ENV_FILE" ]; then
         printf 'ROUTER_SUPPORT_PUBLIC_DOMAIN=%s\n' "$DOMAIN"
         printf 'ROUTER_SUPPORT_SESSION_SECONDS=3600\n'
         printf 'ROUTER_SUPPORT_HEARTBEAT_TIMEOUT=90\n'
+        printf 'ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK=%s\n' "$PANEL_ALLOWED_NETWORK"
         if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
             printf 'ROUTER_SUPPORT_TELEMT_INTEGRATION=1\n'
             printf 'ROUTER_SUPPORT_TELEMT_CONFIG=%s\n' "$TELEMT_CONFIG"
@@ -676,6 +714,7 @@ ensure_env_line ROUTER_SUPPORT_SUPPORT_PUBLIC_KEY "$INSTALL_ROOT/data/support_ke
 ensure_env_line ROUTER_SUPPORT_PUBLIC_DOMAIN "$DOMAIN"
 ensure_env_line ROUTER_SUPPORT_SESSION_SECONDS 3600
 ensure_env_line ROUTER_SUPPORT_HEARTBEAT_TIMEOUT 90
+ensure_env_line ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK "$PANEL_ALLOWED_NETWORK"
 if [ -n "$IP_CERT_ADDRESS" ]; then
     ensure_env_line ROUTER_SUPPORT_TLS_IP "$IP_CERT_ADDRESS"
 fi

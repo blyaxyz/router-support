@@ -1,7 +1,10 @@
+from dataclasses import replace
+from ipaddress import IPv4Network
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from backend.access import LoginAttemptLimiter
 from backend.config import Settings
 from backend.main import create_app
 
@@ -28,12 +31,15 @@ def settings(tmp_path: Path) -> Settings:
         public_base_domain="support.example.test",
         support_session_seconds=3600,
         heartbeat_timeout_seconds=90,
+        panel_allowed_network=IPv4Network("0.0.0.0/0"),
     )
 
 
 def test_registration_heartbeat_and_listing(tmp_path: Path):
     (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
-    with TestClient(create_app(settings(tmp_path))) as client:
+    with TestClient(
+        create_app(settings(tmp_path)), client=("127.0.0.1", 50000)
+    ) as client:
         registration = client.post(
             "/api/routers/register",
             headers={"Authorization": "Bearer bootstrap-test-token"},
@@ -128,7 +134,9 @@ def test_rejects_invalid_credentials(tmp_path: Path):
 def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
     (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
     with TestClient(
-        create_app(settings(tmp_path)), base_url="https://testserver"
+        create_app(settings(tmp_path)),
+        base_url="https://testserver",
+        client=("127.0.0.1", 50000),
     ) as client:
         response = client.get("/", follow_redirects=False)
         assert response.status_code == 303
@@ -191,7 +199,7 @@ def test_rename_and_terminal_ticket_require_engineer_token(tmp_path: Path, monke
         lambda router_uuid: (1, ["ssh"]),
     )
     headers = {"Authorization": "Bearer engineer-test-token"}
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         assert client.patch(f"/api/routers/{UUID}", json={"hostname": "edge-01"}).status_code == 403
         renamed_response = client.patch(
             f"/api/routers/{UUID}", headers=headers, json={"hostname": "edge-01"}
@@ -206,4 +214,85 @@ def test_rename_and_terminal_ticket_require_engineer_token(tmp_path: Path, monke
         )
         assert ticket.status_code == 200
         assert ticket.json()["ticket"]
+
+
+def test_login_blocks_ip_after_five_failures(tmp_path: Path):
+    (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
+    with TestClient(
+        create_app(settings(tmp_path)),
+        base_url="https://testserver",
+        client=("127.0.0.1", 50000),
+    ) as client:
+        headers = {
+            "Authorization": "Bearer wrong",
+            "X-Forwarded-For": "203.0.113.20",
+        }
+        for _ in range(4):
+            assert client.post("/api/auth/login", headers=headers).status_code == 403
+        blocked = client.post("/api/auth/login", headers=headers)
+        assert blocked.status_code == 429
+        assert 1 <= int(blocked.headers["retry-after"]) <= 300
+
+        correct = client.post(
+            "/api/auth/login",
+            headers={
+                "Authorization": "Bearer engineer-test-token",
+                "X-Forwarded-For": "203.0.113.20",
+            },
+        )
+        assert correct.status_code == 429
+
+        another_ip = client.post(
+            "/api/auth/login",
+            headers={
+                "Authorization": "Bearer engineer-test-token",
+                "X-Forwarded-For": "203.0.113.21",
+            },
+        )
+        assert another_ip.status_code == 204
+
+
+def test_login_block_expires_after_five_minutes():
+    limiter = LoginAttemptLimiter()
+    for attempt in range(4):
+        assert limiter.record_failure("203.0.113.20", now=float(attempt)) == 0
+    assert limiter.record_failure("203.0.113.20", now=4.0) == 300
+    assert limiter.retry_after("203.0.113.20", now=4.0) == 300
+    assert limiter.retry_after("203.0.113.20", now=304.0) == 0
+
+
+def test_panel_access_is_limited_by_forwarded_client_ip(tmp_path: Path):
+    (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
+    restricted = replace(
+        settings(tmp_path), panel_allowed_network=IPv4Network("192.168.1.0/24")
+    )
+    with TestClient(
+        create_app(restricted),
+        base_url="https://testserver",
+        client=("127.0.0.1", 50000),
+    ) as client:
+        assert client.get(
+            "/login", headers={"X-Forwarded-For": "192.168.1.44"}
+        ).status_code == 200
+        assert client.get(
+            "/login", headers={"X-Forwarded-For": "203.0.113.20"}
+        ).status_code == 403
+        assert client.get(
+            "/login",
+            headers={"X-Forwarded-For": "192.168.1.44, 203.0.113.20"},
+        ).status_code == 403
+
+        # Router connectivity and monitoring remain public.
+        assert client.get(
+            "/healthz", headers={"X-Forwarded-For": "203.0.113.20"}
+        ).status_code == 200
+        registration = client.post(
+            "/api/routers/register",
+            headers={
+                "Authorization": "Bearer wrong",
+                "X-Forwarded-For": "203.0.113.20",
+            },
+            json={"uuid": UUID, "hostname": "router-1", "public_key": PUBLIC_KEY},
+        )
+        assert registration.status_code == 401
 
