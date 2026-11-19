@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 022
 
 usage() {
     cat <<'EOF'
@@ -176,6 +177,7 @@ verify_local_acme_webroot() {
     local probe_name="router-support-preflight-$$" probe_file response
     probe_file="/var/www/router-support-acme/.well-known/acme-challenge/$probe_name"
     printf 'router-support-ok' >"$probe_file"
+    chmod 0644 "$probe_file"
     if ! response="$(curl -fsS -H "Host: $DOMAIN" \
         "http://127.0.0.1/.well-known/acme-challenge/$probe_name")"; then
         rm -f "$probe_file"
@@ -672,35 +674,37 @@ chmod 0644 "$INSTALL_ROOT/data/support_key.pub"
 
 ENV_FILE="$CONFIG_ROOT/backend.env"
 if [ ! -f "$ENV_FILE" ]; then
-    umask 077
     BOOTSTRAP_TOKEN="$(openssl rand -hex 32)"
     ENGINEER_TOKEN="$(openssl rand -hex 32)"
     TOKEN_PEPPER="$(openssl rand -hex 32)"
     SSH_HOST_KEY="$(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)"
-    {
-        printf 'ROUTER_SUPPORT_BOOTSTRAP_TOKEN=%s\n' "$BOOTSTRAP_TOKEN"
-        printf 'ROUTER_SUPPORT_ENGINEER_TOKEN=%s\n' "$ENGINEER_TOKEN"
-        printf 'ROUTER_SUPPORT_TOKEN_PEPPER=%s\n' "$TOKEN_PEPPER"
-        printf 'ROUTER_SUPPORT_SSH_HOST=%s\n' "$SSH_HOST"
-        printf 'ROUTER_SUPPORT_SSH_HOST_KEY="%s"\n' "$SSH_HOST_KEY"
-        printf 'ROUTER_SUPPORT_SSH_USER=router-tunnel\n'
-        printf 'ROUTER_SUPPORT_SSH_PORT=%s\n' "$SSH_PORT"
-        printf 'ROUTER_SUPPORT_PORT_START=22001\n'
-        printf 'ROUTER_SUPPORT_PORT_END=22999\n'
-        printf 'ROUTER_SUPPORT_DB=%s/data/router-support.db\n' "$INSTALL_ROOT"
-        printf 'ROUTER_SUPPORT_AUTHORIZED_KEYS=%s/data/authorized_keys\n' "$INSTALL_ROOT"
-        printf 'ROUTER_SUPPORT_SUPPORT_KEY=%s/data/support_key\n' "$INSTALL_ROOT"
-        printf 'ROUTER_SUPPORT_SUPPORT_PUBLIC_KEY=%s/data/support_key.pub\n' "$INSTALL_ROOT"
-        printf 'ROUTER_SUPPORT_PUBLIC_DOMAIN=%s\n' "$DOMAIN"
-        printf 'ROUTER_SUPPORT_SESSION_SECONDS=3600\n'
-        printf 'ROUTER_SUPPORT_HEARTBEAT_TIMEOUT=90\n'
-        printf 'ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK=%s\n' "$PANEL_ALLOWED_NETWORK"
-        if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
-            printf 'ROUTER_SUPPORT_TELEMT_INTEGRATION=1\n'
-            printf 'ROUTER_SUPPORT_TELEMT_CONFIG=%s\n' "$TELEMT_CONFIG"
-            printf 'ROUTER_SUPPORT_INTERNAL_HTTPS_PORT=%s\n' "$INTERNAL_HTTPS_PORT"
-        fi
-    } >"$ENV_FILE"
+    (
+        umask 077
+        {
+            printf 'ROUTER_SUPPORT_BOOTSTRAP_TOKEN=%s\n' "$BOOTSTRAP_TOKEN"
+            printf 'ROUTER_SUPPORT_ENGINEER_TOKEN=%s\n' "$ENGINEER_TOKEN"
+            printf 'ROUTER_SUPPORT_TOKEN_PEPPER=%s\n' "$TOKEN_PEPPER"
+            printf 'ROUTER_SUPPORT_SSH_HOST=%s\n' "$SSH_HOST"
+            printf 'ROUTER_SUPPORT_SSH_HOST_KEY="%s"\n' "$SSH_HOST_KEY"
+            printf 'ROUTER_SUPPORT_SSH_USER=router-tunnel\n'
+            printf 'ROUTER_SUPPORT_SSH_PORT=%s\n' "$SSH_PORT"
+            printf 'ROUTER_SUPPORT_PORT_START=22001\n'
+            printf 'ROUTER_SUPPORT_PORT_END=22999\n'
+            printf 'ROUTER_SUPPORT_DB=%s/data/router-support.db\n' "$INSTALL_ROOT"
+            printf 'ROUTER_SUPPORT_AUTHORIZED_KEYS=%s/data/authorized_keys\n' "$INSTALL_ROOT"
+            printf 'ROUTER_SUPPORT_SUPPORT_KEY=%s/data/support_key\n' "$INSTALL_ROOT"
+            printf 'ROUTER_SUPPORT_SUPPORT_PUBLIC_KEY=%s/data/support_key.pub\n' "$INSTALL_ROOT"
+            printf 'ROUTER_SUPPORT_PUBLIC_DOMAIN=%s\n' "$DOMAIN"
+            printf 'ROUTER_SUPPORT_SESSION_SECONDS=3600\n'
+            printf 'ROUTER_SUPPORT_HEARTBEAT_TIMEOUT=90\n'
+            printf 'ROUTER_SUPPORT_PANEL_ALLOWED_NETWORK=%s\n' "$PANEL_ALLOWED_NETWORK"
+            if [ "$TELEMT_INTEGRATION" -eq 1 ]; then
+                printf 'ROUTER_SUPPORT_TELEMT_INTEGRATION=1\n'
+                printf 'ROUTER_SUPPORT_TELEMT_CONFIG=%s\n' "$TELEMT_CONFIG"
+                printf 'ROUTER_SUPPORT_INTERNAL_HTTPS_PORT=%s\n' "$INTERNAL_HTTPS_PORT"
+            fi
+        } >"$ENV_FILE"
+    )
     chmod 0600 "$ENV_FILE"
 else
     echo "Keeping existing secrets in $ENV_FILE"
