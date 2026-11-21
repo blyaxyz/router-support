@@ -15,9 +15,21 @@
     <div class="connection-token" aria-live="polite">
       <div class="connection-row">
         <script>
-        function doCopyOnlyIp(){copy(document.getElementById('server-address').innerText.trim().slice(0,-5))}
-        function doCopyToken(){copy(document.getElementById('connection-token').innerText)}
+        async function doCopyOnlyIp() {
+  const element = document.getElementById('server-address');
+  if (!element) return;
 
+  await navigator.clipboard.writeText(
+    element.innerText.trim().slice(0, -5)
+  );
+}
+
+async function doCopyToken() {
+  const element = document.getElementById('connection-token');
+  if (!element) return;
+
+  await navigator.clipboard.writeText(element.innerText.trim());
+}
         </script>
         <span>Сервер SSH</span>
         <code id="server-address" onclick="doCopyOnlyIp()" style="cursor: pointer;">Загрузка…</code>
