@@ -14,13 +14,18 @@
     </div>
     <div class="connection-token" aria-live="polite">
       <div class="connection-row">
+        <script>
+        function doCopyOnlyIp(){copy(document.getElementById('server-address').innerText.trim().slice(0,-5))}
+        function doCopyToken(){copy(document.getElementById('connection-token').innerText)}
+
+        </script>
         <span>Сервер SSH</span>
-        <code id="server-address">Загрузка…</code>
+        <code id="server-address" onclick="doCopyOnlyIp()" style="cursor: pointer;">Загрузка…</code>
       </div>
       <div class="connection-row">
         <span>Токен подключения</span>
-        <code id="connection-token">Загрузка…</code>
-        <button id="copy-connection-token" class="secondary" type="button" disabled>Копировать</button>
+        <code id="connection-token" onclick="doCopyToken()" style="cursor: pointer;">Загрузка…</code>
+        <button id="copy-connection-token" class="secondary" type="button" disabled>Скопировать</button>
       </div>
       <button id="copy-install-command" class="secondary" type="button" disabled>Копировать команду установки OpenWrt</button>
     </div>

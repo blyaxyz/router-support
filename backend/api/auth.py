@@ -26,7 +26,7 @@ def connection_token(request: Request, response: Response) -> dict[str, str | in
         "ssh_host": settings.ssh_host,
         "ssh_port": settings.ssh_port,
         "install_command": (
-            "curl -fsSL https://raw.githubusercontent.com/blyaxyz/"
+            "wget -qO-  https://raw.githubusercontent.com/blyaxyz/"
             "router-support/main/bootstrap-openwrt.sh | sh"
         ),
     }

@@ -223,7 +223,7 @@ install_support_key() {
 }
 
 start_tunnel() {
-    dbclient -N -T \
+    HOME=/root dbclient -N -T \
         -K 30 -I 0 \
         -o ExitOnForwardFailure=yes \
         -i "$KEY_FILE" \
@@ -264,7 +264,7 @@ run_tunnel() {
         register_device
     fi
     log "connecting reverse SSH tunnel to $SSH_HOST:$SSH_SERVER_PORT (server port $REVERSE_PORT)"
-    if dbclient -N -T \
+    if HOME=/root dbclient -N -T \
         -K 30 -I 0 \
         -o ExitOnForwardFailure=yes \
         -i "$KEY_FILE" \
@@ -302,4 +302,3 @@ case "${1:-run}" in
     run) run_daemon ;;
     *) echo "usage: $0 {register|heartbeat|tunnel|heartbeat-loop|run}" >&2; exit 2 ;;
 esac
-
