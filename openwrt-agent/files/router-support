@@ -4,6 +4,7 @@ set -eu
 # procd may otherwise start root services with HOME=/, while Dropbear resolves
 # trusted hosts through root's actual home directory.
 export HOME=/root USER=root LOGNAME=root
+umask 077
 
 CONFIG_DIR="${ROUTER_SUPPORT_CONFIG_DIR:-/etc/router-support}"
 CONFIG_FILE="$CONFIG_DIR/config"
@@ -13,6 +14,7 @@ KEY_FILE="$CONFIG_DIR/id_router_support"
 KNOWN_HOSTS="/root/.ssh/known_hosts"
 TUNNEL_PID=""
 TUNNEL_CONNECTED="false"
+HTTP_RESPONSE=""
 
 log() {
     logger -t router-support "$*"
@@ -40,6 +42,26 @@ http_post() {
     else
         log "uclient-fetch or curl is required"
         return 127
+    fi
+}
+
+http_post_json() {
+    request_name="$1"
+    url="$2"
+    bearer="$3"
+    body="$4"
+    response_file="/tmp/router-support-http-response.$$"
+    error_file="/tmp/router-support-http-error.$$"
+    if http_post "$url" "$bearer" "$body" >"$response_file" 2>"$error_file"; then
+        HTTP_RESPONSE="$(cat "$response_file")"
+        rm -f "$response_file" "$error_file"
+        return 0
+    else
+        http_status="$?"
+        http_detail="$(tail -n 3 "$error_file" 2>/dev/null | tr '\n' ' ')"
+        rm -f "$response_file" "$error_file"
+        log "$request_name HTTP request failed (client exit $http_status): ${http_detail:-no error detail}"
+        return "$http_status"
     fi
 }
 
@@ -150,10 +172,19 @@ register_device() {
         log "registration requires BOOTSTRAP_TOKEN"
         return 1
     }
-    if ! response="$(http_post "$SERVER_URL/api/routers/register" "$BOOTSTRAP_TOKEN" "$(device_payload)")"; then
-        log "registration HTTP request failed"
-        return 1
-    fi
+    registration_body="$(device_payload)"
+    registration_attempt=1
+    while :; do
+        if http_post_json registration "$SERVER_URL/api/routers/register" \
+            "$BOOTSTRAP_TOKEN" "$registration_body"; then
+            response="$HTTP_RESPONSE"
+            break
+        fi
+        [ "$registration_attempt" -lt 3 ] || return 1
+        log "registration result was not received; retrying ($registration_attempt/3)"
+        registration_attempt=$((registration_attempt + 1))
+        sleep 2
+    done
     DEVICE_TOKEN="$(json_get "$response" '.device_token')"
     SSH_HOST="$(json_get "$response" '.ssh_host')"
     SSH_USER="$(json_get "$response" '.ssh_user')"
@@ -190,10 +221,11 @@ heartbeat() {
     done
     mac_value="$(device_mac_address)"
     body="{\"uuid\":\"$(json_escape "$DEVICE_UUID")\",\"mac_address\":\"$(json_escape "$mac_value")\",\"ssh_host_key\":\"$(json_escape "$router_host_key")\"}"
-    if ! response="$(http_post "$SERVER_URL/api/routers/heartbeat" "$DEVICE_TOKEN" "$body")"; then
-        log "heartbeat HTTP request failed"
+    if ! http_post_json heartbeat "$SERVER_URL/api/routers/heartbeat" \
+        "$DEVICE_TOKEN" "$body"; then
         return 1
     fi
+    response="$HTTP_RESPONSE"
     if ! support_key="$(json_get "$response" '.support_public_key' 2>/dev/null)"; then
         log "heartbeat server returned invalid JSON"
         return 1

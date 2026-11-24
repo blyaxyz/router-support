@@ -83,6 +83,13 @@ ensure_reasonable_clock() {
         echo "[clock] Router UTC time synchronized via NTP: $(date -u)" >&2
         return 0
     fi
+    clock_year="$(date -u +%Y 2>/dev/null || echo 0)"
+    case "$clock_year" in
+        20[2-9][0-9])
+            echo "[clock] Online synchronization unavailable, but router UTC time is plausible; continuing." >&2
+            return 0
+            ;;
+    esac
     echo "[clock] Warning: automatic time synchronization failed." >&2
     echo "[clock] TLS registration may fail; configure NTP or set the router date manually." >&2
 }
