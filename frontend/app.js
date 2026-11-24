@@ -1,6 +1,8 @@
 const state = { routers: [], sessions: new Map() };
 let terminalSocket = null;
 let logsTimer = null;
+let terminalBuffer = '';
+let terminalCursor = 0;
 const elements = {
   routers: document.querySelector('#routers'),
   message: document.querySelector('#message'),
@@ -165,32 +167,77 @@ async function renameRouter(router) {
   }
 }
 
-function cleanTerminalText(value) {
-  return value
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '');
-}
-
 function appendTerminalText(output, value) {
-  let text = output.textContent;
-  for (const character of cleanTerminalText(value)) {
+  const data = value
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\r\n/g, '\n');
+  for (let index = 0; index < data.length; index += 1) {
+    const character = data[index];
+    if (character === '\x1b' && data[index + 1] === '[') {
+      const match = data.slice(index).match(/^\x1b\[([0-9;?]*)([@-~])/);
+      if (match) {
+        const amount = Number.parseInt(match[1], 10) || 1;
+        const lineStart = terminalBuffer.lastIndexOf('\n', terminalCursor - 1) + 1;
+        const nextBreak = terminalBuffer.indexOf('\n', terminalCursor);
+        const lineEnd = nextBreak === -1 ? terminalBuffer.length : nextBreak;
+        if (match[2] === 'D') terminalCursor = Math.max(lineStart, terminalCursor - amount);
+        if (match[2] === 'C') terminalCursor = Math.min(lineEnd, terminalCursor + amount);
+        if (match[2] === 'G') terminalCursor = Math.min(lineEnd, lineStart + amount - 1);
+        if (match[2] === 'K') {
+          if (match[1] === '2') {
+            terminalBuffer = terminalBuffer.slice(0, lineStart) + terminalBuffer.slice(lineEnd);
+            terminalCursor = lineStart;
+          } else {
+            terminalBuffer = terminalBuffer.slice(0, terminalCursor) + terminalBuffer.slice(lineEnd);
+          }
+        }
+        if (match[2] === 'J' && match[1] === '2') {
+          terminalBuffer = '';
+          terminalCursor = 0;
+        }
+        index += match[0].length - 1;
+        continue;
+      }
+    }
+    const lineStart = terminalBuffer.lastIndexOf('\n', terminalCursor - 1) + 1;
     if (character === '\b' || character === '\x7f') {
-      if (text && !text.endsWith('\n')) text = text.slice(0, -1);
-    } else {
-      text += character;
+      terminalCursor = Math.max(lineStart, terminalCursor - 1);
+    } else if (character === '\r') {
+      terminalCursor = lineStart;
+    } else if (character === '\n') {
+      const nextBreak = terminalBuffer.indexOf('\n', terminalCursor);
+      if (nextBreak === -1) {
+        terminalBuffer += '\n';
+        terminalCursor = terminalBuffer.length;
+      } else {
+        terminalCursor = nextBreak + 1;
+      }
+    } else if (character >= ' ') {
+      if (terminalCursor < terminalBuffer.length && terminalBuffer[terminalCursor] !== '\n') {
+        terminalBuffer = terminalBuffer.slice(0, terminalCursor)
+          + character + terminalBuffer.slice(terminalCursor + 1);
+      } else {
+        terminalBuffer = terminalBuffer.slice(0, terminalCursor)
+          + character + terminalBuffer.slice(terminalCursor);
+      }
+      terminalCursor += character.length;
     }
   }
-  // Avoid an unbounded browser DOM during long SSH sessions.
-  output.textContent = text.slice(-250000);
+  if (terminalBuffer.length > 250000) {
+    const removed = terminalBuffer.length - 250000;
+    terminalBuffer = terminalBuffer.slice(removed);
+    terminalCursor = Math.max(0, terminalCursor - removed);
+  }
+  output.textContent = terminalBuffer;
   output.scrollTop = output.scrollHeight;
 }
 
 async function openTerminal(router) {
   const dialog = document.querySelector('#terminal-dialog');
   const output = document.querySelector('#terminal-output');
-  output.textContent = 'Подключение…\n';
+  terminalBuffer = 'Подключение…\n';
+  terminalCursor = terminalBuffer.length;
+  output.textContent = terminalBuffer;
   document.querySelector('#terminal-name').textContent = router.name;
   dialog.showModal();
   try {
@@ -202,13 +249,20 @@ async function openTerminal(router) {
     if (!response.ok) throw new Error(result.detail || `Ошибка SSH: ${response.status}`);
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
     terminalSocket = new WebSocket(`${scheme}://${location.host}/api/terminal/${result.ticket}`);
-    terminalSocket.onopen = () => { output.textContent = ''; output.focus(); };
+    terminalSocket.onopen = () => {
+      terminalBuffer = '';
+      terminalCursor = 0;
+      output.textContent = '';
+      output.focus();
+    };
     terminalSocket.onmessage = (event) => {
       appendTerminalText(output, event.data);
     };
     terminalSocket.onclose = () => appendTerminalText(output, '\n[SSH-сессия закрыта]\n');
   } catch (error) {
-    output.textContent = `${error.message}\n`;
+    terminalBuffer = `${error.message}\n`;
+    terminalCursor = terminalBuffer.length;
+    output.textContent = terminalBuffer;
   }
 }
 
