@@ -80,7 +80,7 @@ sudo grep -E '^ROUTER_SUPPORT_(ENGINEER|BOOTSTRAP)_TOKEN=' /etc/router-support/b
 connection-token, поэтому установка проходит без quiz:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/openwrt-agent-2026.11.24.1/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
 Без `-server/-token` остаётся доступен прежний интерактивный режим. Скрипт:
