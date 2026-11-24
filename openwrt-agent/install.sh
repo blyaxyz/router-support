@@ -97,6 +97,8 @@ for command_name in dropbearkey jsonfilter uclient-fetch; do
     }
 done
 
+echo "[1/6] Prerequisites checked." >&2
+
 umask 077
 mkdir -p "$CONFIG_DIR"
 if [ ! -s "$CONFIG_DIR/uuid" ]; then
@@ -112,12 +114,14 @@ if [ ! -s "$CONFIG_DIR/uuid" ]; then
             "$(printf '%s' "$random_hex" | cut -c21-32)" >"$CONFIG_DIR/uuid"
     fi
 fi
+echo "[2/6] Device identity ready: $(cat "$CONFIG_DIR/uuid")" >&2
 
 if [ ! -s "$CONFIG_DIR/id_router_support" ]; then
     if ! dropbearkey -t ed25519 -f "$CONFIG_DIR/id_router_support" >/dev/null 2>&1; then
         dropbearkey -t rsa -s 2048 -f "$CONFIG_DIR/id_router_support" >/dev/null
     fi
 fi
+echo "[3/6] Device SSH key ready." >&2
 
 cat >"$CONFIG_DIR/config" <<EOF
 SERVER_URL='$SERVER_URL'
@@ -131,12 +135,20 @@ cp "$SOURCE_DIR/files/router-support.init" /etc/init.d/router-support
 cp "$SOURCE_DIR/uninstall.sh" /usr/sbin/router-support-uninstall
 chmod 0755 /usr/sbin/router-support /usr/sbin/router-support-uninstall \
     /etc/init.d/router-support
+echo "[4/6] Agent files installed." >&2
 
 /usr/sbin/router-support register
+echo "[5/6] Device registered on the server." >&2
 /etc/init.d/router-support enable
 /etc/init.d/router-support restart
+echo "[6/6] Service enabled and started." >&2
+if ! /usr/sbin/router-support verify 15; then
+    echo >&2
+    echo "INSTALLATION INCOMPLETE: registration works, but SSH tunnel verification failed." >&2
+    exit 1
+fi
 echo
 echo "Router Support installation completed successfully."
 echo "UUID: $(cat "$CONFIG_DIR/uuid")"
-echo "Service: enabled and started"
+echo "Status: online (heartbeat and SSH tunnel verified)"
 

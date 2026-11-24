@@ -20,4 +20,10 @@ chmod 0755 /usr/sbin/router-support /usr/sbin/router-support-uninstall \
 
 /etc/init.d/router-support enable
 /etc/init.d/router-support restart
-echo "Router Support agent updated and restarted."
+echo "Router Support agent updated and restarted. Verifying connection..."
+if /usr/sbin/router-support verify 15; then
+    echo "Update completed successfully; heartbeat and SSH tunnel are online."
+else
+    echo "Update installed, but SSH tunnel verification failed." >&2
+    exit 1
+fi

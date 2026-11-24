@@ -64,7 +64,7 @@ abort() {
 trap cleanup EXIT
 trap abort HUP INT TERM
 
-echo "Downloading Router Support agent from GitHub..." >&2
+echo "[bootstrap 1/2] Downloading Router Support agent from GitHub..." >&2
 mkdir -p "$INSTALL_DIR/files"
 download "$RAW_ROOT/openwrt-agent/install.sh" "$INSTALL_DIR/install.sh"
 download "$RAW_ROOT/openwrt-agent/update.sh" "$INSTALL_DIR/update.sh"
@@ -75,6 +75,7 @@ download "$RAW_ROOT/openwrt-agent/files/router-support.init" "$INSTALL_DIR/files
 chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/update.sh" \
     "$INSTALL_DIR/reconfigure.sh" "$INSTALL_DIR/uninstall.sh" \
     "$INSTALL_DIR/files/router-support" "$INSTALL_DIR/files/router-support.init"
+echo "[bootstrap 2/2] Download complete; starting agent setup." >&2
 
 if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
    [ -r /etc/router-support/config ]; then

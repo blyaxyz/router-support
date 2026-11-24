@@ -75,6 +75,7 @@ class HeartbeatResponse(BaseModel):
     ssh_host: str
     ssh_host_key: str
     ssh_server_port: int
+    tunnel_connected: bool
 
 
 class SupportSessionResponse(BaseModel):

@@ -108,6 +108,7 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
         assert heartbeat.json()["support_public_key"].startswith("ssh-ed25519 ")
         assert heartbeat.json()["ssh_host"] == "support.example.com"
         assert heartbeat.json()["ssh_server_port"] == 2222
+        assert heartbeat.json()["tunnel_connected"] is False
 
         assert client.get("/api/routers").status_code == 403
         assert client.get(

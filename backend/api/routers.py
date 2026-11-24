@@ -160,7 +160,7 @@ def heartbeat(
     now = _now()
     with request.app.state.database.connect() as connection:
         row = connection.execute(
-            """SELECT id, token_digest, public_ip, ip_isp, ip_lookup_at
+            """SELECT id, token_digest, public_ip, ip_isp, ip_lookup_at, ssh_port
                FROM routers WHERE uuid = ?""",
             (str(payload.uuid),),
         ).fetchone()
@@ -225,6 +225,9 @@ def heartbeat(
         ssh_host=settings.ssh_host,
         ssh_host_key=settings.ssh_host_key,
         ssh_server_port=settings.ssh_port,
+        tunnel_connected=request.app.state.session_manager.tunnel_is_listening(
+            row["ssh_port"]
+        ),
     )
 
 

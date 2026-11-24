@@ -12,6 +12,7 @@ KEY_FILE="$CONFIG_DIR/id_router_support"
 # Dropbear uses root's passwd home directory even when procd exports HOME=/.
 KNOWN_HOSTS="/root/.ssh/known_hosts"
 TUNNEL_PID=""
+TUNNEL_CONNECTED="false"
 
 log() {
     logger -t router-support "$*"
@@ -191,6 +192,7 @@ heartbeat() {
     response_ssh_host="$(json_get "$response" '.ssh_host')"
     response_ssh_port="$(json_get "$response" '.ssh_server_port')"
     response_host_key="$(json_get "$response" '.ssh_host_key')"
+    TUNNEL_CONNECTED="$(json_get "$response" '.tunnel_connected' || true)"
     if [ -n "$response_ssh_host" ] && [ -n "$response_ssh_port" ]; then
         case "$response_ssh_host" in
             *[!A-Za-z0-9._:@-]*) log "unsafe SSH host in heartbeat"; return 1 ;;
@@ -227,9 +229,11 @@ install_support_key() {
 }
 
 start_tunnel() {
+    # ExitOnForwardFailure is intentionally not used. Several vendor OpenWrt
+    # builds (including some Cudy images) ship an older Dropbear dbclient that
+    # rejects that OpenSSH-specific option before making a network connection.
     HOME=/root dbclient -N -T \
         -K 30 -I 0 \
-        -o ExitOnForwardFailure=yes \
         -i "$KEY_FILE" \
         -p "$SSH_SERVER_PORT" \
         -R "127.0.0.1:$REVERSE_PORT:127.0.0.1:22" \
@@ -272,7 +276,6 @@ run_tunnel() {
     log "connecting reverse SSH tunnel to $SSH_HOST:$SSH_SERVER_PORT (server port $REVERSE_PORT)"
     if HOME=/root dbclient -N -T \
         -K 30 -I 0 \
-        -o ExitOnForwardFailure=yes \
         -i "$KEY_FILE" \
         -p "$SSH_SERVER_PORT" \
         -R "127.0.0.1:$REVERSE_PORT:127.0.0.1:22" \
@@ -287,6 +290,7 @@ run_tunnel() {
 
 run_heartbeat_loop() {
     heartbeat_state="unknown"
+    tunnel_state="unknown"
     log "heartbeat loop started for $SERVER_URL (interval ${HEARTBEAT_INTERVAL:-30}s)"
     while :; do
         if [ -z "${DEVICE_TOKEN:-}" ]; then
@@ -301,6 +305,15 @@ run_heartbeat_loop() {
                 log "heartbeat connection established"
                 heartbeat_state="connected"
             fi
+            if [ "$TUNNEL_CONNECTED" = "true" ]; then
+                if [ "$tunnel_state" != "connected" ]; then
+                    log "reverse SSH tunnel confirmed by server"
+                    tunnel_state="connected"
+                fi
+            elif [ "$tunnel_state" != "waiting" ]; then
+                log "server has not detected the reverse SSH tunnel yet"
+                tunnel_state="waiting"
+            fi
         else
             if [ "$heartbeat_state" != "failed" ]; then
                 log "heartbeat failed; HTTP/TLS error is shown above, retrying"
@@ -311,12 +324,44 @@ run_heartbeat_loop() {
     done
 }
 
+verify_connection() {
+    attempts="${1:-15}"
+    case "$attempts" in
+        ''|*[!0-9]*) echo "verify timeout must be a number of attempts" >&2; return 2 ;;
+    esac
+    echo "Waiting for the server to confirm the reverse SSH tunnel..." >&2
+    attempt=1
+    while [ "$attempt" -le "$attempts" ]; do
+        if heartbeat && [ "$TUNNEL_CONNECTED" = "true" ]; then
+            echo "Connection verified: heartbeat and reverse SSH tunnel are online." >&2
+            return 0
+        fi
+        printf '  check %s/%s: tunnel is not online yet\n' "$attempt" "$attempts" >&2
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    echo >&2
+    echo "Agent files were installed, but the reverse SSH tunnel was not established." >&2
+    echo "Recent agent messages:" >&2
+    if command -v logread >/dev/null 2>&1; then
+        logread -e router-support 2>/dev/null | tail -n 20 >&2 || true
+    else
+        echo "  logread is unavailable" >&2
+    fi
+    echo "Run these commands after fixing the reported error:" >&2
+    echo "  /etc/init.d/router-support restart" >&2
+    echo "  /usr/sbin/router-support verify" >&2
+    return 1
+}
+
 load_config
 case "${1:-run}" in
     register) register_device ;;
     heartbeat) heartbeat ;;
     tunnel) run_tunnel ;;
     heartbeat-loop) run_heartbeat_loop ;;
+    verify) verify_connection "${2:-15}" ;;
     run) run_daemon ;;
-    *) echo "usage: $0 {register|heartbeat|tunnel|heartbeat-loop|run}" >&2; exit 2 ;;
+    *) echo "usage: $0 {register|heartbeat|tunnel|heartbeat-loop|verify [attempts]|run}" >&2; exit 2 ;;
 esac
