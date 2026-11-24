@@ -209,7 +209,7 @@ Backend работает как непривилегированный поль�
 Готовую команду с реальными значениями копируйте из панели:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/openwrt-agent-2026.11.24.2/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
 С параметрами bootstrap устанавливает или заменяет подключение без вопросов. Без
