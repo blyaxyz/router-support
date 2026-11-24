@@ -22,6 +22,19 @@ def stop_support(session_id: int, request: Request):
     return {"status": "stopped"}
 
 
+@router.get("/api/sessions/active")
+def list_active_sessions(request: Request):
+    with request.app.state.database.connect() as connection:
+        rows = connection.execute(
+            """SELECT s.id, r.uuid, r.name, s.started_at, s.expires_at, s.status
+               FROM support_sessions s
+               JOIN routers r ON r.id = s.router_id
+               WHERE s.status = 'active'
+               ORDER BY s.id DESC""",
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 @router.get("/api/sessions")
 def list_sessions(request: Request):
     with request.app.state.database.connect() as connection:

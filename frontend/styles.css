@@ -50,6 +50,8 @@ dl div { display: grid; grid-template-columns: 105px 1fr; gap: 8px; }
 dt { color: var(--muted); font-size: .82rem; }
 dd { margin: 0; overflow-wrap: anywhere; font-size: .9rem; }
 .message { margin: 12px 0; }
+.session-notice { display: none; margin: 0 0 12px; padding: 9px 11px; border: 1px solid #665327; border-radius: 9px; background: #322b19; color: #f4cf70; font-size: .78rem; }
+.session-notice.visible { display: block; }
 .notes-label { display: grid; gap: 7px; margin-bottom: 12px; color: var(--muted); font-size: .82rem; }
 .notes { color: #edf5f2; line-height: 1.4; }
 .device-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }

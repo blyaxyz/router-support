@@ -69,10 +69,17 @@ function render() {
     card.querySelector('.delete-router').addEventListener('click', () => deleteRouter(router));
     const button = card.querySelector('.support-button');
     const session = state.sessions.get(router.uuid);
-    button.disabled = router.status !== 'online';
-    button.textContent = session ? 'Завершить поддержку' : 'Начать поддержку';
+    button.disabled = !session && router.status !== 'online';
+    button.textContent = session
+      ? (session.external ? 'Завершить занятую сессию' : 'Завершить поддержку')
+      : 'Начать поддержку';
     button.addEventListener('click', () => toggleSupport(router.uuid, button));
     if (session) {
+      if (session.external) {
+        const notice = card.querySelector('.session-notice');
+        notice.classList.add('visible');
+        notice.textContent = `Сессия открыта в другом браузере или до перезагрузки страницы · ${relativeTime(session.started_at)}`;
+      }
       const links = card.querySelector('.support-links');
       for (const [label, url] of [
         ['LuCI', session.luci_url],
@@ -86,11 +93,13 @@ function render() {
         link.rel = 'noopener';
         links.append(link);
       }
-      const ssh = document.createElement('button');
-      ssh.textContent = 'SSH';
-      ssh.className = 'terminal-link';
-      ssh.addEventListener('click', () => openTerminal(router));
-      links.append(ssh);
+      if (router.status === 'online') {
+        const ssh = document.createElement('button');
+        ssh.textContent = 'SSH';
+        ssh.className = 'terminal-link';
+        ssh.addEventListener('click', () => openTerminal(router));
+        links.append(ssh);
+      }
     }
     elements.routers.append(card);
   }
@@ -302,6 +311,12 @@ document.querySelector('#logs-close').addEventListener('click', () => {
 async function toggleSupport(uuid, button) {
   button.disabled = true;
   const session = state.sessions.get(uuid);
+  if (session?.external && !window.confirm(
+    'Завершить support-сессию, открытую в другом браузере? Активные ссылки и SSH-терминалы этой сессии будут отключены.'
+  )) {
+    button.disabled = false;
+    return;
+  }
   try {
     if (session) {
       const response = await fetch(`/api/sessions/${session.id}/stop`, {
@@ -329,10 +344,20 @@ async function toggleSupport(uuid, button) {
 async function loadRouters() {
   elements.message.textContent = 'Загрузка…';
   try {
-    const response = await fetch('/api/routers');
-    requireAccess(response);
-    if (!response.ok) throw new Error(`Ошибка API: ${response.status}`);
-    state.routers = await response.json();
+    const [routersResponse, sessionsResponse] = await Promise.all([
+      fetch('/api/routers'),
+      fetch('/api/sessions/active'),
+    ]);
+    requireAccess(routersResponse);
+    requireAccess(sessionsResponse);
+    if (!routersResponse.ok) throw new Error(`Ошибка API: ${routersResponse.status}`);
+    if (!sessionsResponse.ok) throw new Error(`Ошибка сессий: ${sessionsResponse.status}`);
+    state.routers = await routersResponse.json();
+    const activeSessions = await sessionsResponse.json();
+    state.sessions.clear();
+    for (const session of activeSessions) {
+      state.sessions.set(session.uuid, { ...session, external: true });
+    }
     render();
   } catch (error) {
     elements.message.textContent = error.message;

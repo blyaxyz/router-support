@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Network
 from pathlib import Path
 
@@ -168,6 +169,49 @@ def test_notes_and_delete_router_connection(tmp_path: Path):
         assert client.get("/api/routers", headers=headers).json() == []
         assert (tmp_path / "authorized_keys").read_text() == ""
         assert client.delete(f"/api/routers/{UUID}", headers=headers).status_code == 404
+
+
+def test_active_session_can_be_stopped_from_another_admin_client(tmp_path: Path):
+    (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
+    app = create_app(settings(tmp_path))
+    headers = {"Authorization": "Bearer engineer-test-token"}
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        client.post(
+            "/api/routers/register",
+            headers={"Authorization": "Bearer bootstrap-test-token"},
+            json={"uuid": UUID, "hostname": "router-1", "public_key": PUBLIC_KEY},
+        )
+        now = datetime.now(UTC).replace(microsecond=0)
+        with app.state.database.connect() as connection:
+            router_id = connection.execute(
+                "SELECT id FROM routers WHERE uuid = ?", (UUID,)
+            ).fetchone()["id"]
+            cursor = connection.execute(
+                """INSERT INTO support_sessions
+                   (router_id, started_at, expires_at, status, token_digest,
+                    luci_port, v2raya_port, app_port)
+                   VALUES (?, ?, ?, 'active', ?, ?, ?, ?)""",
+                (
+                    router_id,
+                    now.isoformat(),
+                    (now + timedelta(hours=1)).isoformat(),
+                    "digest",
+                    31011,
+                    31012,
+                    31013,
+                ),
+            )
+            session_id = cursor.lastrowid
+
+        active = client.get("/api/sessions/active", headers=headers)
+        assert active.status_code == 200
+        assert active.json()[0]["id"] == session_id
+        assert active.json()[0]["uuid"] == UUID
+
+        stopped = client.post(f"/api/sessions/{session_id}/stop", headers=headers)
+        assert stopped.status_code == 200
+        assert stopped.json() == {"status": "stopped"}
+        assert client.get("/api/sessions/active", headers=headers).json() == []
 
 
 def test_rejects_invalid_credentials(tmp_path: Path):
