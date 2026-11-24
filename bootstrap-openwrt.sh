@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-RAW_ROOT="${ROUTER_SUPPORT_RAW_ROOT:-https://raw.githubusercontent.com/blyaxyz/router-support/main}"
+RAW_ROOT="${ROUTER_SUPPORT_RAW_ROOT:-https://github.com/blyaxyz/router-support/blob/main}"
+RAW_QUERY="${ROUTER_SUPPORT_RAW_QUERY:-?raw=1}"
 INSTALL_DIR="/tmp/router-support-bootstrap.$$"
 SERVER_ARG=""
 TOKEN_ARG=""
@@ -66,12 +67,12 @@ trap abort HUP INT TERM
 
 echo "[bootstrap 1/2] Downloading Router Support agent from GitHub..." >&2
 mkdir -p "$INSTALL_DIR/files"
-download "$RAW_ROOT/openwrt-agent/install.sh" "$INSTALL_DIR/install.sh"
-download "$RAW_ROOT/openwrt-agent/update.sh" "$INSTALL_DIR/update.sh"
-download "$RAW_ROOT/openwrt-agent/reconfigure.sh" "$INSTALL_DIR/reconfigure.sh"
-download "$RAW_ROOT/openwrt-agent/uninstall.sh" "$INSTALL_DIR/uninstall.sh"
-download "$RAW_ROOT/openwrt-agent/files/router-support" "$INSTALL_DIR/files/router-support"
-download "$RAW_ROOT/openwrt-agent/files/router-support.init" "$INSTALL_DIR/files/router-support.init"
+download "$RAW_ROOT/openwrt-agent/install.sh$RAW_QUERY" "$INSTALL_DIR/install.sh"
+download "$RAW_ROOT/openwrt-agent/update.sh$RAW_QUERY" "$INSTALL_DIR/update.sh"
+download "$RAW_ROOT/openwrt-agent/reconfigure.sh$RAW_QUERY" "$INSTALL_DIR/reconfigure.sh"
+download "$RAW_ROOT/openwrt-agent/uninstall.sh$RAW_QUERY" "$INSTALL_DIR/uninstall.sh"
+download "$RAW_ROOT/openwrt-agent/files/router-support$RAW_QUERY" "$INSTALL_DIR/files/router-support"
+download "$RAW_ROOT/openwrt-agent/files/router-support.init$RAW_QUERY" "$INSTALL_DIR/files/router-support.init"
 chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/update.sh" \
     "$INSTALL_DIR/reconfigure.sh" "$INSTALL_DIR/uninstall.sh" \
     "$INSTALL_DIR/files/router-support" "$INSTALL_DIR/files/router-support.init"
