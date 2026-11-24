@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-RAW_ROOT="${ROUTER_SUPPORT_RAW_ROOT:-https://raw.githubusercontent.com/blyaxyz/router-support/openwrt-agent-2026.11.24.1}"
+RAW_ROOT="${ROUTER_SUPPORT_RAW_ROOT:-https://raw.githubusercontent.com/blyaxyz/router-support/openwrt-agent-2026.11.24.2}"
 INSTALL_DIR="/tmp/router-support-bootstrap.$$"
 SERVER_ARG=""
 TOKEN_ARG=""

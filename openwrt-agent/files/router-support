@@ -28,12 +28,12 @@ http_post() {
     bearer="$2"
     body="$3"
     if command -v curl >/dev/null 2>&1; then
-        curl --fail --silent --show-error --connect-timeout 15 --max-time 60 \
+        curl --fail --silent --show-error --connect-timeout 8 --max-time 30 \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $bearer" \
             --data "$body" "$url"
     elif command -v uclient-fetch >/dev/null 2>&1; then
-        uclient-fetch -q -T 60 -O - \
+        uclient-fetch -q -T 30 -O - \
             --header="Content-Type: application/json" \
             --header="Authorization: Bearer $bearer" \
             --post-data="$body" "$url"
@@ -150,7 +150,10 @@ register_device() {
         log "registration requires BOOTSTRAP_TOKEN"
         return 1
     }
-    response="$(http_post "$SERVER_URL/api/routers/register" "$BOOTSTRAP_TOKEN" "$(device_payload)")"
+    if ! response="$(http_post "$SERVER_URL/api/routers/register" "$BOOTSTRAP_TOKEN" "$(device_payload)")"; then
+        log "registration HTTP request failed"
+        return 1
+    fi
     DEVICE_TOKEN="$(json_get "$response" '.device_token')"
     SSH_HOST="$(json_get "$response" '.ssh_host')"
     SSH_USER="$(json_get "$response" '.ssh_user')"
@@ -187,8 +190,14 @@ heartbeat() {
     done
     mac_value="$(device_mac_address)"
     body="{\"uuid\":\"$(json_escape "$DEVICE_UUID")\",\"mac_address\":\"$(json_escape "$mac_value")\",\"ssh_host_key\":\"$(json_escape "$router_host_key")\"}"
-    response="$(http_post "$SERVER_URL/api/routers/heartbeat" "$DEVICE_TOKEN" "$body")"
-    support_key="$(json_get "$response" '.support_public_key')"
+    if ! response="$(http_post "$SERVER_URL/api/routers/heartbeat" "$DEVICE_TOKEN" "$body")"; then
+        log "heartbeat HTTP request failed"
+        return 1
+    fi
+    if ! support_key="$(json_get "$response" '.support_public_key' 2>/dev/null)"; then
+        log "heartbeat server returned invalid JSON"
+        return 1
+    fi
     response_ssh_host="$(json_get "$response" '.ssh_host')"
     response_ssh_port="$(json_get "$response" '.ssh_server_port')"
     response_host_key="$(json_get "$response" '.ssh_host_key')"
@@ -330,13 +339,17 @@ verify_connection() {
         ''|*[!0-9]*) echo "verify timeout must be a number of attempts" >&2; return 2 ;;
     esac
     echo "Waiting for the server to confirm the reverse SSH tunnel..." >&2
+    # The service heartbeat starts immediately. Give it time to finish its
+    # first TLS request before this verifier opens another one on small routers.
+    sleep 3
     attempt=1
     while [ "$attempt" -le "$attempts" ]; do
+        printf '  check %s/%s: contacting server...\n' "$attempt" "$attempts" >&2
         if heartbeat && [ "$TUNNEL_CONNECTED" = "true" ]; then
             echo "Connection verified: heartbeat and reverse SSH tunnel are online." >&2
             return 0
         fi
-        printf '  check %s/%s: tunnel is not online yet\n' "$attempt" "$attempts" >&2
+        echo "    tunnel is not online yet" >&2
         sleep 2
         attempt=$((attempt + 1))
     done

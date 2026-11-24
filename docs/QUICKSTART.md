@@ -86,7 +86,7 @@ grep '^ROUTER_SUPPORT_BOOTSTRAP_TOKEN=' /etc/router-support/backend.env
 Скопируйте заполненную команду из панели:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/openwrt-agent-2026.11.24.1/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/openwrt-agent-2026.11.24.2/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
 Параметры `-server` и `-token` отключают quiz. Готовая команда содержит connection-token

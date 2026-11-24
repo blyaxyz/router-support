@@ -195,7 +195,10 @@ echo "[5/6] Registering device on the server..." >&2
 /usr/sbin/router-support register
 echo "      Device registered successfully." >&2
 /etc/init.d/router-support enable
-/etc/init.d/router-support restart
+# This path is only used for new or incomplete installations. A silent stop
+# clears remnants without exposing procd's harmless "service delete: Not found".
+/etc/init.d/router-support stop >/dev/null 2>&1 || true
+/etc/init.d/router-support start
 echo "[6/6] Service enabled and started." >&2
 if ! /usr/sbin/router-support verify 15; then
     echo >&2
