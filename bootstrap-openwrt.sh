@@ -78,7 +78,7 @@ chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/update.sh" \
 echo "[bootstrap 2/2] Download complete; starting agent setup." >&2
 
 if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
-   [ -r /etc/router-support/config ]; then
+   [ -r /etc/router-support/config ] && [ -r /etc/router-support/state ]; then
     if [ -n "$SERVER_ARG" ]; then
         echo "Existing agent detected; replacing its server connection..." >&2
         "$INSTALL_DIR/reconfigure.sh" "$SERVER_ARG" "$TOKEN_ARG"
@@ -119,7 +119,11 @@ if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
             ;;
     esac
 else
-    echo "No existing agent detected. Starting installation..." >&2
+    if [ -r /etc/router-support/config ] || [ -x /usr/sbin/router-support ]; then
+        echo "Incomplete previous installation detected; resuming setup..." >&2
+    else
+        echo "No existing agent detected. Starting installation..." >&2
+    fi
     if [ -n "$SERVER_ARG" ]; then
         "$INSTALL_DIR/install.sh" "$SERVER_ARG" "$TOKEN_ARG"
     elif [ -t 2 ] && [ -r /dev/tty ]; then
