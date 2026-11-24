@@ -206,23 +206,16 @@ Backend работает как непривилегированный поль�
 
 ## Добавление роутера
 
-Непосредственно на OpenWrt через `wget`:
+Готовую команду с реальными значениями копируйте из панели:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
-Или через `curl`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
-```
-
-Bootstrap скачивает только shell-файлы агента и запускает интерактивную установку через
-`/dev/tty`, поэтому команды с pipe корректно спрашивают HTTPS-адрес панели и скрытый
-bootstrap-token. Если вводится IP вместо домена, TLS-сертификат обязан содержать этот
-IP; обычно следует вводить домен панели, а публичный SSH IP агент получит в ответе
-сервера.
+С параметрами bootstrap устанавливает или заменяет подключение без вопросов. Без
+параметров остаётся интерактивная установка через `/dev/tty`. Если вводится IP вместо
+домена, TLS-сертификат обязан содержать этот IP; обычно следует использовать домен
+панели, а публичный SSH IP агент получит в ответе сервера.
 
 Установка с рабочей станции также поддерживается:
 

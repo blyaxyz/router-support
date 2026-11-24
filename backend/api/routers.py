@@ -21,6 +21,7 @@ from fastapi import (
 from backend.access import external_client_ip
 from backend.auth import require_engineer as _require_engineer
 from backend.authorized_keys import sync_authorized_keys
+from backend.event_log import record_event
 from backend.ip_lookup import enrich_router_ip
 from backend.schemas import (
     HeartbeatRequest,
@@ -72,6 +73,7 @@ def register(payload: RegisterRequest, request: Request, token: str = Depends(_b
             "SELECT id, public_key, ssh_port FROM routers WHERE uuid = ?",
             (str(payload.uuid),),
         ).fetchone()
+        was_existing = bool(existing)
         if existing:
             if not secrets.compare_digest(existing["public_key"], payload.public_key):
                 raise HTTPException(
@@ -126,6 +128,15 @@ def register(payload: RegisterRequest, request: Request, token: str = Depends(_b
                     (cursor.lastrowid, name, local_port, 0 if name == "app" else 1),
                 )
         sync_authorized_keys(settings.authorized_keys_file, _all_key_rows(connection))
+
+    record_event(
+        database,
+        "info",
+        "registration",
+        f"device {'re-registered' if was_existing else 'registered'}; "
+        f"hostname={payload.hostname}, reverse_port={reverse_port}",
+        str(payload.uuid),
+    )
 
     return RegisterResponse(
         uuid=payload.uuid,
@@ -193,6 +204,13 @@ def heartbeat(
         )
         router_id = row["id"]
     if lookup_ip:
+        record_event(
+            request.app.state.database,
+            "info",
+            "heartbeat",
+            f"external IP changed to {lookup_ip}; location lookup scheduled",
+            str(payload.uuid),
+        )
         background_tasks.add_task(
             enrich_router_ip,
             request.app.state.database,
@@ -301,6 +319,13 @@ def delete_router(router_uuid: str, request: Request) -> Response:
         router_uuid,
         row["id"],
         row["ssh_port"],
+    )
+    record_event(
+        database,
+        "warning",
+        "registration",
+        f"device connection deleted; reverse_port={row['ssh_port']}",
+        router_uuid,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

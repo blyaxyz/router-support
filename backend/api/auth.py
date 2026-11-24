@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from shlex import quote
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -21,13 +22,16 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def connection_token(request: Request, response: Response) -> dict[str, str | int]:
     response.headers["Cache-Control"] = "no-store"
     settings = request.app.state.settings
+    server = quote(settings.public_base_domain)
+    token = quote(settings.bootstrap_token)
     return {
         "token": settings.bootstrap_token,
         "ssh_host": settings.ssh_host,
         "ssh_port": settings.ssh_port,
         "install_command": (
-            "wget -qO-  https://raw.githubusercontent.com/blyaxyz/"
-            "router-support/main/bootstrap-openwrt.sh | sh"
+            "wget -qO- https://raw.githubusercontent.com/blyaxyz/"
+            "router-support/main/bootstrap-openwrt.sh | "
+            f"sh -s -- -server {server} -token {token}"
         ),
     }
 

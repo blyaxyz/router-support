@@ -83,24 +83,16 @@ grep '^ROUTER_SUPPORT_BOOTSTRAP_TOKEN=' /etc/router-support/backend.env
 
 ## 3. Установите агент одной командой на OpenWrt
 
-Через `wget`:
+Скопируйте заполненную команду из панели:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
-Или через `curl`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
-```
-
-Скрипт спросит HTTPS-адрес панели и скрыто запросит bootstrap-token. Токен не передаётся
-в аргументах процессов и после регистрации удаляется с роутера. Скачиваются только
-небольшие shell-файлы агента; Git и другие тяжёлые зависимости не устанавливаются.
-Команда через pipe использует `/dev/tty` для всего квиза, поэтому после ввода адреса и
-токена установка автоматически регистрирует устройство, включает сервис и запускает
-reverse SSH-туннель. Дополнительных команд после квиза выполнять не требуется.
+Параметры `-server` и `-token` отключают quiz. Готовая команда содержит connection-token
+и может сохраниться в shell history; после регистрации токен удаляется с роутера.
+Скачиваются только небольшие shell-файлы агента, затем сервис автоматически включается
+и запускает reverse SSH-туннель.
 
 При повторном запуске bootstrap показывает меню обновления, настройки нового
 подключения или удаления. Обновление

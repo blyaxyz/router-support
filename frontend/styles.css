@@ -60,8 +60,11 @@ dd { margin: 0; overflow-wrap: anywhere; font-size: .9rem; }
 .support-links .terminal-link { flex: 1; padding: 9px 6px; background: transparent; border-color: #315248; color: var(--accent); font-size: .82rem; }
 .router-card > button { width: 100%; }
 #terminal-dialog { width: min(900px, calc(100% - 24px)); height: min(650px, calc(100% - 24px)); padding: 0; border: 1px solid #315248; border-radius: 14px; background: #080d11; color: #d7fbe9; }
-#terminal-dialog::backdrop { background: #000b; backdrop-filter: blur(4px); }
+#terminal-dialog::backdrop, #logs-dialog::backdrop { background: #000b; backdrop-filter: blur(4px); }
 .terminal-heading { height: 58px; display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 #terminal-output { height: calc(100% - 100px); margin: 0; padding: 18px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; background: #05080a; color: #aaf3cf; font: 14px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .terminal-help { padding: 9px 14px; color: var(--muted); font-size: .75rem; }
+#logs-dialog { width: min(1050px, calc(100% - 24px)); height: min(720px, calc(100% - 24px)); padding: 0; border: 1px solid #315248; border-radius: 14px; background: #080d11; color: #d7fbe9; }
+.dialog-actions { display: flex; gap: 8px; }
+#logs-output { height: calc(100% - 58px); margin: 0; padding: 18px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #05080a; color: #b8cfc7; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
 @media (max-width: 620px) { header { padding-top: 30px; align-items: flex-start; flex-direction: column; gap: 20px; } .connection-token { max-width: 100%; width: 100%; justify-items: start; } .connection-row { width: 100%; flex-wrap: wrap; } .connection-row code { flex: 1; } .summary { grid-template-columns: 1fr; } .toolbar { flex-direction: column; } }

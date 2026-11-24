@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS support_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_support_sessions_router_status
 ON support_sessions(router_id, status);
+
+CREATE TABLE IF NOT EXISTS event_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    level TEXT NOT NULL,
+    category TEXT NOT NULL,
+    router_uuid TEXT,
+    message TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_logs_created_at ON event_logs(created_at);
 """
 
 

@@ -3,6 +3,7 @@ set -eu
 
 usage() {
     echo "usage: $0 [server-url] [bootstrap-token]" >&2
+    echo "       $0 -server domain-or-url -token connection-token" >&2
     echo "with no arguments the installer starts an interactive setup" >&2
     echo "or set ROUTER_SUPPORT_BOOTSTRAP_TOKEN in the environment" >&2
     exit 2
@@ -33,6 +34,11 @@ prompt_secret() {
     BOOTSTRAP_TOKEN="$secret_value"
 }
 
+if [ "${1:-}" = "-server" ] || [ "${1:-}" = "--server" ]; then
+    [ "$#" -eq 4 ] || usage
+    [ "${3:-}" = "-token" ] || [ "${3:-}" = "--token" ] || usage
+    set -- "$2" "$4"
+fi
 [ "$#" -le 2 ] || usage
 if [ "$#" -eq 0 ]; then
     server_input=""
@@ -51,7 +57,12 @@ if [ "$#" -eq 0 ]; then
         *) SERVER_URL="https://${server_input%/}" ;;
     esac
 else
-    SERVER_URL="${1%/}"
+    server_input="$1"
+    case "$server_input" in
+        https://*) SERVER_URL="${server_input%/}" ;;
+        http://*) echo "Only HTTPS is allowed" >&2; exit 2 ;;
+        *) SERVER_URL="https://${server_input%/}" ;;
+    esac
 fi
 
 BOOTSTRAP_TOKEN="${2:-${ROUTER_SUPPORT_BOOTSTRAP_TOKEN:-}}"

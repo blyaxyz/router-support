@@ -9,6 +9,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from backend.api.routers import _require_engineer
+from backend.event_log import record_event
 from backend.schemas import TerminalTicketResponse
 
 router = APIRouter(tags=["terminal"])
@@ -58,14 +59,33 @@ async def terminal_socket(websocket: WebSocket, ticket: str):
         await websocket.close(code=4403)
         return
     await websocket.accept()
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        start_new_session=True,
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError as error:
+        record_event(
+            websocket.app.state.database,
+            "error",
+            "web_terminal",
+            f"could not start browser SSH terminal: {error}",
+            router_uuid,
+        )
+        await websocket.send_text(f"Could not start SSH terminal: {error}\n")
+        await websocket.close(code=1011)
+        return
     websocket.app.state.session_manager.register_terminal(session_id, process)
+    record_event(
+        websocket.app.state.database,
+        "info",
+        "web_terminal",
+        f"browser SSH terminal opened; session_id={session_id}, pid={process.pid}",
+        router_uuid,
+    )
 
     async def ssh_to_browser():
         while True:
@@ -103,6 +123,14 @@ async def terminal_socket(websocket: WebSocket, ticket: str):
                 except ProcessLookupError:
                     pass
         websocket.app.state.session_manager.unregister_terminal(session_id, process)
+        record_event(
+            websocket.app.state.database,
+            "info" if process.returncode in (None, 0, -signal.SIGTERM) else "warning",
+            "web_terminal",
+            f"browser SSH terminal closed; session_id={session_id}, "
+            f"exit_code={process.returncode}",
+            router_uuid,
+        )
         try:
             await websocket.close()
         except RuntimeError:

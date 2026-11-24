@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 
 from backend.access import LoginAttemptLimiter, PanelAccessMiddleware
 from backend.api.auth import router as auth_router
+from backend.api.logs import router as logs_router
 from backend.api.routers import router as routers_router
 from backend.api.sessions import router as sessions_router
 from backend.api.terminal import TerminalTickets, router as terminal_router
@@ -28,10 +29,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         database.initialize()
         session_manager.mark_interrupted_sessions()
+        session_manager.monitor_router_connections()
         async def cleanup_sessions():
             while True:
                 await asyncio.sleep(30)
                 session_manager.cleanup_expired()
+                session_manager.monitor_router_connections()
 
         cleanup_task = asyncio.create_task(cleanup_sessions())
         try:
@@ -57,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.terminal_tickets = TerminalTickets()
     app.state.login_attempt_limiter = LoginAttemptLimiter()
     app.include_router(auth_router)
+    app.include_router(logs_router)
     app.include_router(routers_router)
     app.include_router(sessions_router)
     app.include_router(terminal_router)

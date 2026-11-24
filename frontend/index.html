@@ -20,7 +20,7 @@
   if (!element) return;
 
   await navigator.clipboard.writeText(
-    element.innerText.trim().slice(0, -5)
+    element.dataset.host || element.innerText.trim()
   );
 }
 
@@ -32,7 +32,7 @@ async function doCopyToken() {
 }
         </script>
         <span>Сервер SSH</span>
-        <code id="server-address" onclick="doCopyOnlyIp()" style="cursor: pointer;">Загрузка…</code>
+        <code id="server-address" onclick="doCopyOnlyIp()" style="cursor: pointer;" title="Скопировать SSH host">Загрузка…</code>
       </div>
       <div class="connection-row">
         <span>Токен подключения</span>
@@ -40,6 +40,7 @@ async function doCopyToken() {
         <button id="copy-connection-token" class="secondary" type="button" disabled>Скопировать</button>
       </div>
       <button id="copy-install-command" class="secondary" type="button" disabled>Копировать команду установки OpenWrt</button>
+      <button id="open-logs" class="secondary" type="button">Журнал подключений</button>
     </div>
   </header>
   <main>
@@ -90,6 +91,16 @@ async function doCopyToken() {
     </div>
     <pre id="terminal-output" tabindex="0" aria-label="SSH терминал"></pre>
     <p class="terminal-help">Кликните в терминал и печатайте. Поддерживаются Enter, Tab, стрелки и Ctrl+C.</p>
+  </dialog>
+  <dialog id="logs-dialog">
+    <div class="terminal-heading">
+      <strong>Журнал подключений и поддержки</strong>
+      <div class="dialog-actions">
+        <button id="refresh-logs" class="secondary" type="button">Обновить</button>
+        <button id="logs-close" class="secondary" type="button">Закрыть</button>
+      </div>
+    </div>
+    <pre id="logs-output" aria-live="polite">Загрузка…</pre>
   </dialog>
   <script src="/app.js" defer></script>
 </body>

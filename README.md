@@ -76,19 +76,14 @@ sudo grep -E '^ROUTER_SUPPORT_(ENGINEER|BOOTSTRAP)_TOKEN=' /etc/router-support/b
 
 ## 2. Подключение OpenWrt
 
-Выполните на роутере одну команду через `wget`:
+Скопируйте готовую команду из панели. Она уже содержит адрес сервера и
+connection-token, поэтому установка проходит без quiz:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
-Или через `curl`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh
-```
-
-Укажите HTTPS-адрес панели и вставьте `ROUTER CONNECTION TOKEN`. Скрипт:
+Без `-server/-token` остаётся доступен прежний интерактивный режим. Скрипт:
 
 1. создаст или повторно использует постоянный UUID устройства;
 2. создаст индивидуальный SSH-ключ непосредственно на роутере;

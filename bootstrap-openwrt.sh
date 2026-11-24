@@ -3,6 +3,34 @@ set -eu
 
 RAW_ROOT="${ROUTER_SUPPORT_RAW_ROOT:-https://raw.githubusercontent.com/blyaxyz/router-support/main}"
 INSTALL_DIR="/tmp/router-support-bootstrap.$$"
+SERVER_ARG=""
+TOKEN_ARG=""
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -server|--server)
+            [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
+            SERVER_ARG="$2"
+            shift 2
+            ;;
+        -token|--token)
+            [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
+            TOKEN_ARG="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "usage: $0 [-server domain-or-url -token connection-token]" >&2
+            exit 0
+            ;;
+        *) echo "Unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+if { [ -n "$SERVER_ARG" ] && [ -z "$TOKEN_ARG" ]; } || \
+   { [ -z "$SERVER_ARG" ] && [ -n "$TOKEN_ARG" ]; }; then
+    echo "-server and -token must be supplied together" >&2
+    exit 2
+fi
 
 [ "$(id -u)" -eq 0 ] || {
     echo "Run this installer as root on OpenWrt" >&2
@@ -27,7 +55,14 @@ download() {
 cleanup() {
     rm -rf "$INSTALL_DIR"
 }
-trap cleanup EXIT HUP INT TERM
+abort() {
+    trap - EXIT HUP INT TERM
+    cleanup
+    echo "Installation interrupted; temporary files removed." >&2
+    exit 130
+}
+trap cleanup EXIT
+trap abort HUP INT TERM
 
 echo "Downloading Router Support agent from GitHub..." >&2
 mkdir -p "$INSTALL_DIR/files"
@@ -43,6 +78,11 @@ chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/update.sh" \
 
 if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
    [ -r /etc/router-support/config ]; then
+    if [ -n "$SERVER_ARG" ]; then
+        echo "Existing agent detected; replacing its server connection..." >&2
+        "$INSTALL_DIR/reconfigure.sh" "$SERVER_ARG" "$TOKEN_ARG"
+        exit 0
+    fi
     echo >&2
     echo "Existing Router Support agent detected." >&2
     echo "  1) Update (recommended)" >&2
@@ -79,7 +119,9 @@ if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
     esac
 else
     echo "No existing agent detected. Starting installation..." >&2
-    if [ -t 2 ] && [ -r /dev/tty ]; then
+    if [ -n "$SERVER_ARG" ]; then
+        "$INSTALL_DIR/install.sh" "$SERVER_ARG" "$TOKEN_ARG"
+    elif [ -t 2 ] && [ -r /dev/tty ]; then
         # wget|sh leaves stdin at EOF. Give the downloaded interactive installer
         # the controlling terminal so every quiz answer can still be read.
         "$INSTALL_DIR/install.sh" </dev/tty

@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# procd may otherwise start root services with HOME=/, while Dropbear resolves
+# trusted hosts through root's actual home directory.
+export HOME=/root USER=root LOGNAME=root
+
 CONFIG_DIR="${ROUTER_SUPPORT_CONFIG_DIR:-/etc/router-support}"
 CONFIG_FILE="$CONFIG_DIR/config"
 STATE_FILE="$CONFIG_DIR/state"
@@ -263,6 +267,8 @@ run_tunnel() {
     if [ -z "${DEVICE_TOKEN:-}" ]; then
         register_device
     fi
+    [ -r "$KEY_FILE" ] || { log "reverse SSH private key is missing: $KEY_FILE"; return 1; }
+    [ -s "$KNOWN_HOSTS" ] || { log "SSH trusted hosts file is missing: $KNOWN_HOSTS"; return 1; }
     log "connecting reverse SSH tunnel to $SSH_HOST:$SSH_SERVER_PORT (server port $REVERSE_PORT)"
     if HOME=/root dbclient -N -T \
         -K 30 -I 0 \
@@ -280,6 +286,8 @@ run_tunnel() {
 }
 
 run_heartbeat_loop() {
+    heartbeat_state="unknown"
+    log "heartbeat loop started for $SERVER_URL (interval ${HEARTBEAT_INTERVAL:-30}s)"
     while :; do
         if [ -z "${DEVICE_TOKEN:-}" ]; then
             register_device || {
@@ -288,7 +296,17 @@ run_heartbeat_loop() {
                 continue
             }
         fi
-        heartbeat || log "heartbeat failed"
+        if heartbeat; then
+            if [ "$heartbeat_state" != "connected" ]; then
+                log "heartbeat connection established"
+                heartbeat_state="connected"
+            fi
+        else
+            if [ "$heartbeat_state" != "failed" ]; then
+                log "heartbeat failed; HTTP/TLS error is shown above, retrying"
+                heartbeat_state="failed"
+            fi
+        fi
         sleep "${HEARTBEAT_INTERVAL:-30}"
     done
 }

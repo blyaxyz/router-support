@@ -1,5 +1,6 @@
 const state = { routers: [], sessions: new Map() };
 let terminalSocket = null;
+let logsTimer = null;
 const elements = {
   routers: document.querySelector('#routers'),
   message: document.querySelector('#message'),
@@ -168,7 +169,22 @@ function cleanTerminalText(value) {
   return value
     .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\r(?!\n)/g, '');
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '');
+}
+
+function appendTerminalText(output, value) {
+  let text = output.textContent;
+  for (const character of cleanTerminalText(value)) {
+    if (character === '\b' || character === '\x7f') {
+      if (text && !text.endsWith('\n')) text = text.slice(0, -1);
+    } else {
+      text += character;
+    }
+  }
+  // Avoid an unbounded browser DOM during long SSH sessions.
+  output.textContent = text.slice(-250000);
+  output.scrollTop = output.scrollHeight;
 }
 
 async function openTerminal(router) {
@@ -188,14 +204,46 @@ async function openTerminal(router) {
     terminalSocket = new WebSocket(`${scheme}://${location.host}/api/terminal/${result.ticket}`);
     terminalSocket.onopen = () => { output.textContent = ''; output.focus(); };
     terminalSocket.onmessage = (event) => {
-      output.textContent += cleanTerminalText(event.data);
-      output.scrollTop = output.scrollHeight;
+      appendTerminalText(output, event.data);
     };
-    terminalSocket.onclose = () => { output.textContent += '\n[SSH-сессия закрыта]\n'; };
+    terminalSocket.onclose = () => appendTerminalText(output, '\n[SSH-сессия закрыта]\n');
   } catch (error) {
     output.textContent = `${error.message}\n`;
   }
 }
+
+async function loadLogs() {
+  const output = document.querySelector('#logs-output');
+  try {
+    const response = await fetch('/api/logs?limit=300');
+    requireAccess(response);
+    if (!response.ok) throw new Error(`Ошибка журнала: ${response.status}`);
+    const events = await response.json();
+    output.textContent = events.length ? events.map((event) => {
+      const time = new Intl.DateTimeFormat('ru', {
+        dateStyle: 'short', timeStyle: 'medium',
+      }).format(new Date(event.created_at));
+      const router = event.router_uuid ? ` · ${event.router_uuid}` : '';
+      return `${time} · ${event.level} · ${event.category}${router}\n${event.message}`;
+    }).join('\n\n') : 'Событий пока нет';
+    output.scrollTop = output.scrollHeight;
+  } catch (error) {
+    output.textContent = error.message;
+  }
+}
+
+document.querySelector('#open-logs').addEventListener('click', () => {
+  document.querySelector('#logs-dialog').showModal();
+  loadLogs();
+  clearInterval(logsTimer);
+  logsTimer = setInterval(loadLogs, 5000);
+});
+document.querySelector('#refresh-logs').addEventListener('click', loadLogs);
+document.querySelector('#logs-close').addEventListener('click', () => {
+  clearInterval(logsTimer);
+  logsTimer = null;
+  document.querySelector('#logs-dialog').close();
+});
 
 async function toggleSupport(uuid, button) {
   button.disabled = true;
@@ -249,6 +297,7 @@ async function loadConnectionToken() {
     const result = await response.json();
     tokenElement.textContent = result.token;
     serverElement.textContent = `${result.ssh_host}:${result.ssh_port}`;
+    serverElement.dataset.host = result.ssh_host;
     installButton.dataset.command = result.install_command;
     copyButton.disabled = false;
     installButton.disabled = false;

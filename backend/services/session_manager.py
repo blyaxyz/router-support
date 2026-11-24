@@ -14,6 +14,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from backend.event_log import record_event
 from backend.schemas import SupportSessionResponse
 from backend.security import token_digest
 
@@ -27,6 +28,7 @@ class SessionManager:
         self.settings = settings
         self.processes: dict[int, subprocess.Popen] = {}
         self.terminal_processes: dict[int, set] = {}
+        self.router_states: dict[str, str] = {}
         self.known_hosts = settings.support_private_key.parent / "router_known_hosts"
 
     @staticmethod
@@ -92,6 +94,54 @@ class SessionManager:
                 (now,),
             )
 
+    def monitor_router_connections(self) -> None:
+        now = datetime.now(UTC)
+        with self.database.connect() as connection:
+            routers = connection.execute(
+                "SELECT uuid, name, ssh_port, last_seen FROM routers"
+            ).fetchall()
+        current_uuids = set()
+        for router in routers:
+            router_uuid = router["uuid"]
+            current_uuids.add(router_uuid)
+            heartbeat_fresh = datetime.fromisoformat(router["last_seen"]) >= now - timedelta(
+                seconds=self.settings.heartbeat_timeout_seconds
+            )
+            tunnel_connected = self.tunnel_is_listening(router["ssh_port"])
+            if not heartbeat_fresh:
+                state = "offline"
+                level = "warning"
+                message = (
+                    f"{router['name']}: heartbeat timeout; last_seen={router['last_seen']}, "
+                    f"reverse_port={router['ssh_port']}, tunnel_connected={tunnel_connected}"
+                )
+            elif not tunnel_connected:
+                state = "heartbeat_without_tunnel"
+                level = "warning"
+                message = (
+                    f"{router['name']}: heartbeat is active but reverse SSH tunnel is absent; "
+                    f"reverse_port={router['ssh_port']}"
+                )
+            else:
+                state = "online"
+                level = "info"
+                message = (
+                    f"{router['name']}: heartbeat and reverse SSH tunnel are active; "
+                    f"reverse_port={router['ssh_port']}"
+                )
+            if self.router_states.get(router_uuid) != state:
+                previous = self.router_states.get(router_uuid, "unknown")
+                record_event(
+                    self.database,
+                    level,
+                    "router_connection",
+                    f"state {previous} -> {state}; {message}",
+                    router_uuid,
+                )
+                self.router_states[router_uuid] = state
+        for removed_uuid in set(self.router_states) - current_uuids:
+            self.router_states.pop(removed_uuid, None)
+
     def cleanup_expired(self) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
         with self.database.connect() as connection:
@@ -106,6 +156,20 @@ class SessionManager:
             if process.poll() is not None:
                 self.processes.pop(session_id, None)
                 self._mark_stopped(session_id, "failed")
+                with self.database.connect() as connection:
+                    row = connection.execute(
+                        """SELECT r.uuid FROM support_sessions s
+                           JOIN routers r ON r.id = s.router_id WHERE s.id = ?""",
+                        (session_id,),
+                    ).fetchone()
+                record_event(
+                    self.database,
+                    "error",
+                    "support_session",
+                    f"support SSH process exited unexpectedly; session_id={session_id}, "
+                    f"exit_code={process.returncode}",
+                    row["uuid"] if row else None,
+                )
 
     def _write_known_host(self, ssh_port: int, host_key: str) -> None:
         if not host_key:
@@ -361,6 +425,13 @@ class SessionManager:
             v2raya_port,
             app_enabled,
         )
+        record_event(
+            self.database,
+            "info",
+            "support_session",
+            f"support start requested; session_id={session_id}, reverse_port={router['ssh_port']}",
+            router_uuid,
+        )
 
         try:
             self._write_known_host(router["ssh_port"], router["router_ssh_host_key"])
@@ -400,6 +471,13 @@ class SessionManager:
                 router_uuid,
                 session_id,
             )
+            record_event(
+                self.database,
+                "error",
+                "support_session",
+                f"could not start SSH process; session_id={session_id}; error={error}",
+                router_uuid,
+            )
             raise HTTPException(
                 502, f"could not start support SSH process: {error}"
             ) from error
@@ -431,6 +509,13 @@ class SessionManager:
                 detail,
                 stderr[-2000:],
             )
+            record_event(
+                self.database,
+                "error",
+                "support_session",
+                f"support SSH startup failed; session_id={session_id}; {detail}",
+                router_uuid,
+            )
             raise HTTPException(502, detail)
         ssh_errors.close()
         self.processes[session_id] = process
@@ -446,6 +531,13 @@ class SessionManager:
             session_id,
             process.pid,
         )
+        record_event(
+            self.database,
+            "info",
+            "support_session",
+            f"support SSH established; session_id={session_id}, pid={process.pid}",
+            router_uuid,
+        )
         return self._urls(session_id, router_id, expires_at, token, app_enabled)
 
     def _mark_stopped(self, session_id: int, status: str = "stopped") -> None:
@@ -458,6 +550,12 @@ class SessionManager:
             )
 
     def stop(self, session_id: int) -> None:
+        with self.database.connect() as connection:
+            router = connection.execute(
+                """SELECT r.uuid FROM support_sessions s
+                   JOIN routers r ON r.id = s.router_id WHERE s.id = ?""",
+                (session_id,),
+            ).fetchone()
         for terminal in self.terminal_processes.pop(session_id, set()):
             if terminal.returncode is None:
                 try:
@@ -473,4 +571,11 @@ class SessionManager:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=2)
         self._mark_stopped(session_id)
+        record_event(
+            self.database,
+            "info",
+            "support_session",
+            f"support session stopped; session_id={session_id}",
+            router["uuid"] if router else None,
+        )
 
