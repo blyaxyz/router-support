@@ -30,7 +30,7 @@ def connection_token(request: Request, response: Response) -> dict[str, str | in
         "ssh_port": settings.ssh_port,
         "install_command": (
             "wget -qO- https://raw.githubusercontent.com/blyaxyz/"
-            "router-support/main/bootstrap-openwrt.sh | "
+            "router-support/refs/heads/main/bootstrap-openwrt.sh | "
             f"sh -s -- -server {server} -token {token}"
         ),
     }

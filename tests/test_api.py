@@ -283,7 +283,7 @@ def test_frontend_requires_login_and_rejects_invalid_token(tmp_path: Path):
             "ssh_port": 2222,
             "install_command": (
                 "wget -qO- https://raw.githubusercontent.com/blyaxyz/"
-                "router-support/main/bootstrap-openwrt.sh | "
+                "router-support/refs/heads/main/bootstrap-openwrt.sh | "
                 "sh -s -- -server support.example.test -token bootstrap-test-token"
             ),
         }

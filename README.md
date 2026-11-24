@@ -31,13 +31,13 @@ SSH-туннель к серверу, поэтому на стороне кли�
 Запустите установщик через `curl`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | sudo bash
 ```
 
 Или через `wget`:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | sudo bash
 ```
 
 На чистом сервере откроется quiz. Установщик автоматически определит публичный IPv4 и
@@ -80,7 +80,7 @@ sudo grep -E '^ROUTER_SUPPORT_(ENGINEER|BOOTSTRAP)_TOKEN=' /etc/router-support/b
 connection-token, поэтому установка проходит без quiz:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
 Без `-server/-token` остаётся доступен прежний интерактивный режим. Скрипт:
@@ -154,7 +154,7 @@ Support-сессия по умолчанию действует один час.
 Для обновления или удаления сервера снова выполните ту же команду:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | sudo bash
 ```
 
 При существующей установке появится меню:

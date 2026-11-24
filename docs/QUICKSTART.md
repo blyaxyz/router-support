@@ -24,13 +24,13 @@ WSL сами по себе не делают сервис доступным и�
 На чистом Debian 12/13:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | sudo bash
 ```
 
 Либо через `wget`:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | sudo bash
 ```
 
 В конце установки скрипт показывает `ENGINEER ACCESS TOKEN` для входа в панель и
@@ -86,7 +86,7 @@ grep '^ROUTER_SUPPORT_BOOTSTRAP_TOKEN=' /etc/router-support/backend.env
 Скопируйте заполненную команду из панели:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
 Параметры `-server` и `-token` отключают quiz. Готовая команда содержит connection-token

@@ -139,13 +139,13 @@ systemctl status router-support-certbot.timer
 Для установки достаточно загрузить один bootstrap-скрипт из репозитория:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | sudo bash
 ```
 
 Альтернатива через `wget`:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | sudo bash
 ```
 
 После успешного развёртывания установщик выводит крупным блоком два токена:
@@ -162,7 +162,7 @@ wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstra
 можно переопределить окружением:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-server.sh | \
+curl -fsSL https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-server.sh | \
   sudo env \
     ROUTER_SUPPORT_REPO_URL=https://github.com/blyaxyz/router-support.git \
     ROUTER_SUPPORT_REPO_REF=main \
@@ -209,7 +209,7 @@ Backend работает как непривилегированный поль�
 Готовую команду с реальными значениями копируйте из панели:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
+wget -qO- https://raw.githubusercontent.com/blyaxyz/router-support/refs/heads/main/bootstrap-openwrt.sh | sh -s -- -server support.example.com -token ROUTER_CONNECTION_TOKEN
 ```
 
 С параметрами bootstrap устанавливает или заменяет подключение без вопросов. Без
