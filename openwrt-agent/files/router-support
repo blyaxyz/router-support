@@ -28,12 +28,12 @@ http_post() {
     bearer="$2"
     body="$3"
     if command -v curl >/dev/null 2>&1; then
-        curl --fail --silent --show-error \
+        curl --fail --silent --show-error --connect-timeout 15 --max-time 60 \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $bearer" \
             --data "$body" "$url"
     elif command -v uclient-fetch >/dev/null 2>&1; then
-        uclient-fetch -q -O - \
+        uclient-fetch -q -T 60 -O - \
             --header="Content-Type: application/json" \
             --header="Authorization: Bearer $bearer" \
             --post-data="$body" "$url"

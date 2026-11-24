@@ -137,8 +137,9 @@ chmod 0755 /usr/sbin/router-support /usr/sbin/router-support-uninstall \
     /etc/init.d/router-support
 echo "[4/6] Agent files installed." >&2
 
+echo "[5/6] Registering device on the server..." >&2
 /usr/sbin/router-support register
-echo "[5/6] Device registered on the server." >&2
+echo "      Device registered successfully." >&2
 /etc/init.d/router-support enable
 /etc/init.d/router-support restart
 echo "[6/6] Service enabled and started." >&2

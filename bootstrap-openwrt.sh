@@ -41,11 +41,11 @@ download() {
     source_url="$1"
     destination="$2"
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$source_url" -o "$destination"
+        curl -fsSL --connect-timeout 15 --max-time 60 "$source_url" -o "$destination"
     elif command -v uclient-fetch >/dev/null 2>&1; then
-        uclient-fetch -q -O "$destination" "$source_url"
+        uclient-fetch -q -T 60 -O "$destination" "$source_url"
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -O "$destination" "$source_url"
+        wget -q -T 60 -O "$destination" "$source_url"
     else
         echo "curl, uclient-fetch or wget is required" >&2
         exit 1
