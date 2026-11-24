@@ -137,7 +137,7 @@ device_mac_address() {
 
 write_state() {
     umask 077
-    temporary="$STATE_FILE.tmp"
+    temporary="$STATE_FILE.tmp.$$"
     {
         printf "DEVICE_TOKEN='%s'\n" "$DEVICE_TOKEN"
         printf "SSH_HOST='%s'\n" "$SSH_HOST"
@@ -150,7 +150,7 @@ write_state() {
 }
 
 forget_bootstrap_token() {
-    temporary="$CONFIG_FILE.tmp"
+    temporary="$CONFIG_FILE.tmp.$$"
     grep -v '^BOOTSTRAP_TOKEN=' "$CONFIG_FILE" >"$temporary"
     chmod 600 "$temporary"
     mv "$temporary" "$CONFIG_FILE"
@@ -165,7 +165,7 @@ install_server_host_key() {
     esac
     mkdir -p "$(dirname "$KNOWN_HOSTS")"
     chmod 700 "$(dirname "$KNOWN_HOSTS")"
-    temporary="$KNOWN_HOSTS.tmp"
+    temporary="$KNOWN_HOSTS.tmp.$$"
     if [ -f "$KNOWN_HOSTS" ]; then
         # Dropbear indexes known hosts by hostname even on a non-standard port.
         grep -vF "$SSH_HOST " "$KNOWN_HOSTS" | \
@@ -252,10 +252,16 @@ heartbeat() {
         case "$response_ssh_port" in
             ''|*[!0-9]*) log "invalid SSH port in heartbeat"; return 1 ;;
         esac
+        endpoint_changed=0
+        [ "$SSH_HOST" = "$response_ssh_host" ] || endpoint_changed=1
+        [ "$SSH_SERVER_PORT" = "$response_ssh_port" ] || endpoint_changed=1
         SSH_HOST="$response_ssh_host"
         SSH_SERVER_PORT="$response_ssh_port"
         install_server_host_key "$response_host_key"
-        write_state
+        if [ "$endpoint_changed" -eq 1 ]; then
+            write_state
+            log "server SSH endpoint changed; local state updated"
+        fi
     fi
     case "$support_key" in
         ssh-ed25519\ *|ssh-rsa\ *) install_support_key "$support_key" ;;
@@ -266,7 +272,7 @@ heartbeat() {
 install_support_key() {
     support_key="$1"
     authorized_keys="/etc/dropbear/authorized_keys"
-    temporary="$authorized_keys.tmp"
+    temporary="$authorized_keys.tmp.$$"
     mkdir -p /etc/dropbear
     if [ -f "$authorized_keys" ]; then
         grep -v ' router-support-server$' "$authorized_keys" >"$temporary" || true
