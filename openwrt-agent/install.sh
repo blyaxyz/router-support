@@ -34,6 +34,59 @@ prompt_secret() {
     BOOTSTRAP_TOKEN="$secret_value"
 }
 
+sync_clock_from_trusted_https() {
+    command -v curl >/dev/null 2>&1 || return 1
+    trusted_date="$(
+        curl -fsSIL --connect-timeout 15 --max-time 30 https://github.com/ 2>/dev/null |
+            sed -n 's/^[Dd]ate:[[:space:]]*//p' |
+            tail -n 1 |
+            tr -d '\r'
+    )"
+    # Expected RFC 7231 form: Tue, 24 Nov 2026 11:15:23 GMT
+    set -- $trusted_date
+    [ "$#" -ge 6 ] || return 1
+    clock_day="$2"
+    clock_month_name="$3"
+    clock_year="$4"
+    clock_time="$5"
+    case "$clock_month_name" in
+        Jan) clock_month=01 ;; Feb) clock_month=02 ;; Mar) clock_month=03 ;;
+        Apr) clock_month=04 ;; May) clock_month=05 ;; Jun) clock_month=06 ;;
+        Jul) clock_month=07 ;; Aug) clock_month=08 ;; Sep) clock_month=09 ;;
+        Oct) clock_month=10 ;; Nov) clock_month=11 ;; Dec) clock_month=12 ;;
+        *) return 1 ;;
+    esac
+    old_ifs="$IFS"
+    IFS=:
+    set -- $clock_time
+    IFS="$old_ifs"
+    [ "$#" -eq 3 ] || return 1
+    clock_hour="$1"
+    clock_minute="$2"
+    clock_second="$3"
+    case "$clock_year$clock_month$clock_day$clock_hour$clock_minute$clock_second" in
+        *[!0-9]*) return 1 ;;
+    esac
+    date -u -s \
+        "${clock_year}${clock_month}${clock_day}${clock_hour}${clock_minute}.${clock_second}" \
+        >/dev/null 2>&1
+}
+
+ensure_reasonable_clock() {
+    echo "[clock] Router UTC time before synchronization: $(date -u 2>/dev/null || date)" >&2
+    if sync_clock_from_trusted_https; then
+        echo "[clock] Router UTC time synchronized securely via GitHub HTTPS: $(date -u)" >&2
+        return 0
+    fi
+    if command -v ntpd >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && \
+       timeout 20 ntpd -q -p time.cloudflare.com >/dev/null 2>&1; then
+        echo "[clock] Router UTC time synchronized via NTP: $(date -u)" >&2
+        return 0
+    fi
+    echo "[clock] Warning: automatic time synchronization failed." >&2
+    echo "[clock] TLS registration may fail; configure NTP or set the router date manually." >&2
+}
+
 if [ "${1:-}" = "-server" ] || [ "${1:-}" = "--server" ]; then
     [ "$#" -eq 4 ] || usage
     [ "${3:-}" = "-token" ] || [ "${3:-}" = "--token" ] || usage
@@ -97,6 +150,7 @@ for command_name in dropbearkey jsonfilter uclient-fetch; do
     }
 done
 
+ensure_reasonable_clock
 echo "[1/6] Prerequisites checked." >&2
 
 umask 077
