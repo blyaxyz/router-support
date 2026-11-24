@@ -309,24 +309,43 @@ run_daemon() {
 }
 
 run_tunnel() {
-    if [ -z "${DEVICE_TOKEN:-}" ]; then
-        register_device
-    fi
-    [ -r "$KEY_FILE" ] || { log "reverse SSH private key is missing: $KEY_FILE"; return 1; }
-    [ -s "$KNOWN_HOSTS" ] || { log "SSH trusted hosts file is missing: $KNOWN_HOSTS"; return 1; }
-    log "connecting reverse SSH tunnel to $SSH_HOST:$SSH_SERVER_PORT (server port $REVERSE_PORT)"
-    if HOME=/root dbclient -N -T \
-        -K 30 -I 0 \
-        -i "$KEY_FILE" \
-        -p "$SSH_SERVER_PORT" \
-        -R "127.0.0.1:$REVERSE_PORT:127.0.0.1:22" \
-        "$SSH_USER@$SSH_HOST"; then
-        log "reverse SSH tunnel ended normally"
-    else
-        status="$?"
-        log "reverse SSH tunnel failed with exit status $status; check the preceding dbclient message"
-        return "$status"
-    fi
+    tunnel_attempt=0
+    while :; do
+        # Reload state written by registration or the heartbeat process. This
+        # also picks up a changed server endpoint without rebooting the router.
+        load_config || true
+        if [ -z "${DEVICE_TOKEN:-}" ]; then
+            if ! register_device; then
+                log "tunnel registration is unavailable; retrying in 10 seconds"
+                sleep 10
+                continue
+            fi
+        fi
+        if [ ! -r "$KEY_FILE" ]; then
+            log "reverse SSH private key is missing: $KEY_FILE; retrying in 10 seconds"
+            sleep 10
+            continue
+        fi
+        if [ ! -s "$KNOWN_HOSTS" ]; then
+            log "SSH trusted hosts file is missing: $KNOWN_HOSTS; retrying in 10 seconds"
+            sleep 10
+            continue
+        fi
+        tunnel_attempt=$((tunnel_attempt + 1))
+        log "connecting reverse SSH tunnel to $SSH_HOST:$SSH_SERVER_PORT (server port $REVERSE_PORT, attempt $tunnel_attempt)"
+        if HOME=/root dbclient -N -T \
+            -K 30 -I 0 \
+            -i "$KEY_FILE" \
+            -p "$SSH_SERVER_PORT" \
+            -R "127.0.0.1:$REVERSE_PORT:127.0.0.1:22" \
+            "$SSH_USER@$SSH_HOST"; then
+            log "reverse SSH tunnel ended; reconnecting in 10 seconds"
+        else
+            status="$?"
+            log "reverse SSH tunnel failed with exit status $status; reconnecting in 10 seconds"
+        fi
+        sleep 10
+    done
 }
 
 run_heartbeat_loop() {

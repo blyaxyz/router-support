@@ -70,23 +70,51 @@ def register(payload: RegisterRequest, request: Request, token: str = Depends(_b
         # Serialize allocation so concurrent registrations cannot select one port.
         connection.execute("BEGIN IMMEDIATE")
         existing = connection.execute(
-            "SELECT id, public_key, ssh_port FROM routers WHERE uuid = ?",
+            """SELECT id, uuid, public_key, ssh_port, mac_address
+               FROM routers WHERE uuid = ?""",
             (str(payload.uuid),),
         ).fetchone()
+        matched_by_mac = False
+        if not existing and payload.mac_address:
+            mac_matches = connection.execute(
+                """SELECT id, uuid, public_key, ssh_port, mac_address
+                   FROM routers WHERE UPPER(mac_address) = ? LIMIT 2""",
+                (payload.mac_address.upper(),),
+            ).fetchall()
+            if len(mac_matches) > 1:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "MAC address is registered for multiple devices",
+                )
+            if mac_matches:
+                existing = mac_matches[0]
+                matched_by_mac = True
         was_existing = bool(existing)
         if existing:
-            if not secrets.compare_digest(existing["public_key"], payload.public_key):
+            key_matches = secrets.compare_digest(
+                existing["public_key"], payload.public_key
+            )
+            mac_matches = bool(
+                payload.mac_address
+                and existing["mac_address"]
+                and secrets.compare_digest(
+                    existing["mac_address"].upper(), payload.mac_address.upper()
+                )
+            )
+            if not key_matches and not mac_matches:
                 raise HTTPException(
                     status.HTTP_409_CONFLICT,
                     "UUID is registered with another SSH key",
                 )
             reverse_port = existing["ssh_port"]
             connection.execute(
-                """UPDATE routers SET name = ?, model = ?, firmware = ?, ram_mb = ?, mac_address = ?,
-                   token_digest = ?, last_seen = ? WHERE id = ?""",
+                """UPDATE routers SET uuid = ?, name = ?, model = ?, firmware = ?,
+                   ram_mb = ?, mac_address = ?, public_key = ?, token_digest = ?,
+                   last_seen = ? WHERE id = ?""",
                 (
-                    payload.hostname, payload.model, payload.firmware, payload.ram_mb,
-                    payload.mac_address,
+                    str(payload.uuid), payload.hostname, payload.model,
+                    payload.firmware, payload.ram_mb, payload.mac_address,
+                    payload.public_key,
                     token_digest(device_token, settings.device_token_pepper), now,
                     existing["id"],
                 ),
@@ -133,7 +161,7 @@ def register(payload: RegisterRequest, request: Request, token: str = Depends(_b
         database,
         "info",
         "registration",
-        f"device {'re-registered' if was_existing else 'registered'}; "
+        f"device {'re-enrolled by MAC' if matched_by_mac else 're-registered' if was_existing else 'registered'}; "
         f"hostname={payload.hostname}, reverse_port={reverse_port}",
         str(payload.uuid),
     )

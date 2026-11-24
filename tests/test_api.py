@@ -11,6 +11,7 @@ from backend.main import create_app
 
 
 UUID = "123e4567-e89b-12d3-a456-426614174000"
+SECOND_UUID = "223e4567-e89b-12d3-a456-426614174001"
 PUBLIC_KEY = "ssh-ed25519 " + "A" * 48
 
 
@@ -170,6 +171,52 @@ def test_notes_and_delete_router_connection(tmp_path: Path):
         assert client.get("/api/routers", headers=headers).json() == []
         assert (tmp_path / "authorized_keys").read_text() == ""
         assert client.delete(f"/api/routers/{UUID}", headers=headers).status_code == 404
+
+
+def test_reenrollment_by_mac_preserves_router_and_reverse_port(tmp_path: Path):
+    (tmp_path / "support_key.pub").write_text("ssh-ed25519 " + "C" * 48)
+    headers = {"Authorization": "Bearer engineer-test-token"}
+    with TestClient(
+        create_app(settings(tmp_path)), client=("127.0.0.1", 50000)
+    ) as client:
+        first = client.post(
+            "/api/routers/register",
+            headers={"Authorization": "Bearer bootstrap-test-token"},
+            json={
+                "uuid": UUID,
+                "hostname": "router-before-reset",
+                "mac_address": "AA:BB:CC:DD:EE:FF",
+                "public_key": PUBLIC_KEY,
+            },
+        )
+        assert first.status_code == 201
+        assert first.json()["reverse_port"] == 22001
+        client.put(
+            f"/api/routers/{UUID}/notes",
+            headers=headers,
+            json={"notes": "keep after factory reset"},
+        )
+
+        second = client.post(
+            "/api/routers/register",
+            headers={"Authorization": "Bearer bootstrap-test-token"},
+            json={
+                "uuid": SECOND_UUID,
+                "hostname": "router-after-reset",
+                "mac_address": "aa:bb:cc:dd:ee:ff",
+                "public_key": "ssh-ed25519 " + "B" * 48,
+            },
+        )
+        assert second.status_code == 201
+        assert second.json()["reverse_port"] == 22001
+
+        listing = client.get("/api/routers", headers=headers).json()
+        assert len(listing) == 1
+        assert listing[0]["uuid"] == SECOND_UUID
+        assert listing[0]["notes"] == "keep after factory reset"
+        keys = (tmp_path / "authorized_keys").read_text()
+        assert f"router-{SECOND_UUID}" in keys
+        assert f"router-{UUID}" not in keys
 
 
 def test_active_session_can_be_stopped_from_another_admin_client(tmp_path: Path):

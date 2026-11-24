@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-RAW_ROOT="${ROUTER_SUPPORT_RAW_ROOT:-https://github.com/blyaxyz/router-support/blob/main}"
-RAW_QUERY="${ROUTER_SUPPORT_RAW_QUERY:-?raw=1}"
+RAW_ROOT="${ROUTER_SUPPORT_RAW_ROOT:-https://raw.githubusercontent.com/blyaxyz/router-support/main}"
 INSTALL_DIR="/tmp/router-support-bootstrap.$$"
 SERVER_ARG=""
 TOKEN_ARG=""
@@ -42,11 +41,11 @@ download() {
     source_url="$1"
     destination="$2"
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --connect-timeout 15 --max-time 60 "$source_url" -o "$destination"
+        curl -fsSL --connect-timeout 8 --max-time 30 "$source_url" -o "$destination"
     elif command -v uclient-fetch >/dev/null 2>&1; then
-        uclient-fetch -q -T 60 -O "$destination" "$source_url"
+        uclient-fetch -q -T 30 -O "$destination" "$source_url"
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -T 60 -O "$destination" "$source_url"
+        wget -q -T 30 -O "$destination" "$source_url"
     else
         echo "curl, uclient-fetch or wget is required" >&2
         exit 1
@@ -67,12 +66,18 @@ trap abort HUP INT TERM
 
 echo "[bootstrap 1/2] Downloading Router Support agent from GitHub..." >&2
 mkdir -p "$INSTALL_DIR/files"
-download "$RAW_ROOT/openwrt-agent/install.sh$RAW_QUERY" "$INSTALL_DIR/install.sh"
-download "$RAW_ROOT/openwrt-agent/update.sh$RAW_QUERY" "$INSTALL_DIR/update.sh"
-download "$RAW_ROOT/openwrt-agent/reconfigure.sh$RAW_QUERY" "$INSTALL_DIR/reconfigure.sh"
-download "$RAW_ROOT/openwrt-agent/uninstall.sh$RAW_QUERY" "$INSTALL_DIR/uninstall.sh"
-download "$RAW_ROOT/openwrt-agent/files/router-support$RAW_QUERY" "$INSTALL_DIR/files/router-support"
-download "$RAW_ROOT/openwrt-agent/files/router-support.init$RAW_QUERY" "$INSTALL_DIR/files/router-support.init"
+echo "  [1/6] Installer" >&2
+download "$RAW_ROOT/openwrt-agent/install.sh" "$INSTALL_DIR/install.sh"
+echo "  [2/6] Updater" >&2
+download "$RAW_ROOT/openwrt-agent/update.sh" "$INSTALL_DIR/update.sh"
+echo "  [3/6] Connection setup" >&2
+download "$RAW_ROOT/openwrt-agent/reconfigure.sh" "$INSTALL_DIR/reconfigure.sh"
+echo "  [4/6] Uninstaller" >&2
+download "$RAW_ROOT/openwrt-agent/uninstall.sh" "$INSTALL_DIR/uninstall.sh"
+echo "  [5/6] Agent" >&2
+download "$RAW_ROOT/openwrt-agent/files/router-support" "$INSTALL_DIR/files/router-support"
+echo "  [6/6] Service definition" >&2
+download "$RAW_ROOT/openwrt-agent/files/router-support.init" "$INSTALL_DIR/files/router-support.init"
 chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/update.sh" \
     "$INSTALL_DIR/reconfigure.sh" "$INSTALL_DIR/uninstall.sh" \
     "$INSTALL_DIR/files/router-support" "$INSTALL_DIR/files/router-support.init"
