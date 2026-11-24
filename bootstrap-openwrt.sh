@@ -78,7 +78,11 @@ chmod 0755 "$INSTALL_DIR/install.sh" "$INSTALL_DIR/update.sh" \
 echo "[bootstrap 2/2] Download complete; starting agent setup." >&2
 
 if [ -x /etc/init.d/router-support ] && [ -x /usr/sbin/router-support ] && \
-   [ -r /etc/router-support/config ] && [ -r /etc/router-support/state ]; then
+   [ -s /etc/router-support/config ] && [ -s /etc/router-support/state ] && \
+   [ -s /etc/router-support/uuid ] && [ -s /etc/router-support/id_router_support ] && \
+   grep -q '^DEVICE_TOKEN=' /etc/router-support/state && \
+   grep -q '^SSH_HOST=' /etc/router-support/state && \
+   grep -q '^REVERSE_PORT=' /etc/router-support/state; then
     if [ -n "$SERVER_ARG" ]; then
         echo "Existing agent detected; replacing its server connection..." >&2
         "$INSTALL_DIR/reconfigure.sh" "$SERVER_ARG" "$TOKEN_ARG"
