@@ -56,7 +56,7 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
                 "public_key": PUBLIC_KEY,
             },
         )
-        assert registration.status_code == 201
+        assert registration.status_code == 200
         result = registration.json()
         assert result["reverse_port"] == 22001
         assert result["ssh_server_port"] == 2222
@@ -79,7 +79,7 @@ def test_registration_heartbeat_and_listing(tmp_path: Path):
                 "public_key": PUBLIC_KEY,
             },
         )
-        assert duplicate.status_code == 201
+        assert duplicate.status_code == 200
         assert duplicate.json()["reverse_port"] == 22001
         assert duplicate.json()["device_token"] != result["device_token"]
         result = duplicate.json()
@@ -153,7 +153,7 @@ def test_notes_and_delete_router_connection(tmp_path: Path):
                 "public_key": PUBLIC_KEY,
             },
         )
-        assert registration.status_code == 201
+        assert registration.status_code == 200
 
         notes = client.put(
             f"/api/routers/{UUID}/notes",
@@ -189,7 +189,7 @@ def test_reenrollment_by_mac_preserves_router_and_reverse_port(tmp_path: Path):
                 "public_key": PUBLIC_KEY,
             },
         )
-        assert first.status_code == 201
+        assert first.status_code == 200
         assert first.json()["reverse_port"] == 22001
         client.put(
             f"/api/routers/{UUID}/notes",
@@ -207,7 +207,7 @@ def test_reenrollment_by_mac_preserves_router_and_reverse_port(tmp_path: Path):
                 "public_key": "ssh-ed25519 " + "B" * 48,
             },
         )
-        assert second.status_code == 201
+        assert second.status_code == 200
         assert second.json()["reverse_port"] == 22001
 
         listing = client.get("/api/routers", headers=headers).json()

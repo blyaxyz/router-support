@@ -160,6 +160,14 @@ done
 ensure_reasonable_clock
 echo "[1/6] Prerequisites checked." >&2
 
+# A partially installed or previously configured agent may still be running.
+# Stop it before rotating the device token so no concurrent registration can
+# overwrite the token that this installer is about to save.
+if [ -x /etc/init.d/router-support ]; then
+    /etc/init.d/router-support stop >/dev/null 2>&1 || true
+    sleep 1
+fi
+
 umask 077
 mkdir -p "$CONFIG_DIR"
 if [ ! -s "$CONFIG_DIR/uuid" ]; then

@@ -50,6 +50,7 @@ http_post_json() {
     url="$2"
     bearer="$3"
     body="$4"
+    required_field="$5"
     response_file="/tmp/router-support-http-response.$$"
     error_file="/tmp/router-support-http-error.$$"
     if http_post "$url" "$bearer" "$body" >"$response_file" 2>"$error_file"; then
@@ -58,7 +59,17 @@ http_post_json() {
         return 0
     else
         http_status="$?"
+        HTTP_RESPONSE="$(cat "$response_file" 2>/dev/null || true)"
         http_detail="$(tail -n 3 "$error_file" 2>/dev/null | tr '\n' ' ')"
+        # Some minimal OpenWrt uclient-fetch builds return status 8 for a valid
+        # HTTP 201 response. Accept the response only when the endpoint-specific
+        # success field is present, never merely because the body is JSON.
+        if [ -n "$HTTP_RESPONSE" ] && \
+           jsonfilter -s "$HTTP_RESPONSE" -e "@$required_field" >/dev/null 2>&1; then
+            rm -f "$response_file" "$error_file"
+            log "$request_name received a valid response despite client exit $http_status; continuing"
+            return 0
+        fi
         rm -f "$response_file" "$error_file"
         log "$request_name HTTP request failed (client exit $http_status): ${http_detail:-no error detail}"
         return "$http_status"
@@ -176,7 +187,7 @@ register_device() {
     registration_attempt=1
     while :; do
         if http_post_json registration "$SERVER_URL/api/routers/register" \
-            "$BOOTSTRAP_TOKEN" "$registration_body"; then
+            "$BOOTSTRAP_TOKEN" "$registration_body" '.device_token'; then
             response="$HTTP_RESPONSE"
             break
         fi
@@ -222,7 +233,7 @@ heartbeat() {
     mac_value="$(device_mac_address)"
     body="{\"uuid\":\"$(json_escape "$DEVICE_UUID")\",\"mac_address\":\"$(json_escape "$mac_value")\",\"ssh_host_key\":\"$(json_escape "$router_host_key")\"}"
     if ! http_post_json heartbeat "$SERVER_URL/api/routers/heartbeat" \
-        "$DEVICE_TOKEN" "$body"; then
+        "$DEVICE_TOKEN" "$body" '.support_public_key'; then
         return 1
     fi
     response="$HTTP_RESPONSE"

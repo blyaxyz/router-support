@@ -57,7 +57,7 @@ def _all_key_rows(connection: sqlite3.Connection) -> list[dict]:
     ]
 
 
-@router.post("/register", response_model=RegisterResponse, status_code=201)
+@router.post("/register", response_model=RegisterResponse, status_code=200)
 def register(payload: RegisterRequest, request: Request, token: str = Depends(_bearer)):
     settings = request.app.state.settings
     if not secrets.compare_digest(token, settings.bootstrap_token):
